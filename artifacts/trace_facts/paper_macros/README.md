@@ -23,6 +23,8 @@ reproducible from the public dataset.
 | `\mediancodecdecodespeedttft` | median TTFT residual (s) | Codex | same + aggregate decode latency |
 | `\totaltoolcatetory` | distinct tools observed (floored to 10) | merged | trace DB |
 | `\topthreetoolpercent` | per-provider top-3 tool share (floored) | per-provider | trace DB |
+| `\toolcalltoppercentage` | Claude top-3 tool share (floored) | Claude | trace DB |
+| `\toolcalltoppercentagecodex` | Codex top-3 tool share (rounded) | Codex | trace DB |
 | `\toolcallslongerthanonemin` | % of tool calls slower than 1 min | merged | effective latency `>= 60 s` |
 | `\toolcallslongerthanoneminpercent` | % of tool time those calls hold | merged | same |
 | `\prefixcachehitrate` | global token-weighted prefix hit rate | merged | `overview_summary` |
@@ -35,9 +37,11 @@ per-request metrics replay the exact turn boundaries from
 medians and tool stats are computed off the trace DB. "Longer than 1 minute" is the `>= 60000 ms`
 effective-latency bins (`internal` else `wall`), matching `tool_calls/tool_latency_distribution`.
 
-The two "more than X" macros (`\totaltoolcatetory`, `\topthreetoolpercent`) are floored to the
-nearest 10 so the paper's "more than ..." phrasing stays true; the exact basis is printed and kept
-as a trailing comment in the generated file. `\prefillamplificationfactor` is the
+The "more than X" macros (`\totaltoolcatetory`, `\topthreetoolpercent`,
+`\toolcalltoppercentage`) are floored so the paper's "more than ..." phrasing stays true; the
+Codex-specific `\toolcalltoppercentagecodex` macro is rounded because the paper states it as an
+approximate total rather than a lower bound. The exact basis is printed and kept as a trailing
+comment in the generated file. `\prefillamplificationfactor` is the
 **context-growth** amplification (new append / positive same-session total-input growth), *not*
 `1/(1 - hit_rate)`.
 

@@ -363,6 +363,18 @@ def build_macros(
             "basis": f"Claude top-3 {claude_top3 * 100:.2f}%, Codex top-3 {codex_top3 * 100:.2f}% (floored to {top3_floor}%)",
         },
         {
+            "name": "toolcalltoppercentage",
+            "body": f"{_floor_to_10(claude_top3 * 100)}\\%\\xspace",
+            "scope": "claude",
+            "basis": f"Claude top-3 {claude_top3 * 100:.2f}% (floored for an 'over' statement)",
+        },
+        {
+            "name": "toolcalltoppercentagecodex",
+            "body": f"{round(codex_top3 * 100)}\\%\\xspace",
+            "scope": "codex",
+            "basis": f"Codex top-3 {codex_top3 * 100:.2f}% (rounded)",
+        },
+        {
             "name": "toolcallslongerthanonemin",
             "body": f"{round(tools['long_tool']['merged']['call_share'] * 100)}\\xspace",
             "scope": "merged",

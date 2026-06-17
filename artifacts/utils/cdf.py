@@ -177,8 +177,8 @@ def plot_stacked_share_panels(
         for title, count_share, mass_share in panels:
             count_y_pos = y + row_gap
             mass_y_pos = y
-            y_positions.append((count_y_pos, "rounds", count_share))
-            y_positions.append((mass_y_pos, "tokens", mass_share))
+            y_positions.append((count_y_pos, count_bar_label, count_share))
+            y_positions.append((mass_y_pos, mass_bar_label, mass_share))
             group_labels.append((count_y_pos + compact_bar_h / 2 + 0.13, title))
             y -= 2 * row_gap + group_gap
 
@@ -235,11 +235,12 @@ def plot_stacked_share_panels(
         handles = [
             mpatches.Patch(facecolor=colors[i], edgecolor="white") for i in range(n_bins)
         ]
+        compact_legend_title = legend_title.split(" per ")[0]
         legend_center_x = 0.57
         fig.text(
             legend_center_x,
             0.985,
-            "Append length",
+            compact_legend_title,
             ha="center",
             va="center",
             fontsize=fs_legend + 0.3,
