@@ -1,0 +1,71 @@
+---
+import { loadSummary } from '../../lib/summary';
+import { buildCompare, COMING_SOON } from '../../lib/compare';
+import VsCard from '../VsCard.astro';
+import CompareTable from '../CompareTable.astro';
+import TermStrip from '../TermStrip.astro';
+import Footer from '../Footer.astro';
+import { localeFromUrl, useTranslations } from '../../i18n';
+import { localizeCompareData } from '../../i18n/compare';
+
+const locale = localeFromUrl(Astro.url);
+const t = useTranslations(Astro.url).compare;
+const cmp = localizeCompareData(buildCompare(loadSummary()), locale);
+const soonList = COMING_SOON.join(', ');
+const titleStop = locale === 'zh' ? '。' : '.';
+---
+
+<section class="surface" id="compare" role="tabpanel" aria-label={t.aria}>
+  <div class="hero reveal" style="--d:60ms;">
+    <span class="eyebrow">{t.eyebrow}</span>
+    <h1>{t.titleBefore} <em>{t.titleEm}</em>{titleStop}</h1>
+    <p class="lede">
+      {t.lede}
+    </p>
+  </div>
+
+  <div class="svg-legend reveal" style="--d:180ms">
+    <span class="lg"><span class="sw" style="background:var(--terra)"></span>Claude</span>
+    <span class="lg"><span class="sw" style="background:var(--sage)"></span>Codex</span>
+    <span class="lg"><span class="sw" style="background:var(--card-2); border:1px dashed rgba(42,38,34,0.32);"></span>{t.comingSoon}</span>
+    <span style="font-size: var(--fs-xs); color:var(--muted); margin-left:auto;">{t.sameTrace}</span>
+  </div>
+
+  <div class="vs-head reveal" style="--d:240ms">
+    <VsCard tone="terra" head={cmp.claudeHead} sub={t.currentPoolSteps} ofSteps={t.table.ofSteps} />
+    <VsCard tone="sage" head={cmp.codexHead} sub={t.currentPoolSteps} ofSteps={t.table.ofSteps} />
+    <VsCard
+      tone="ghost"
+      soon={COMING_SOON}
+      sub={t.moreProviders}
+      soonCap={t.table.soonCap}
+      upcomingLabel={t.table.upcomingLabel.replace('{providers}', soonList)}
+    />
+  </div>
+
+  <div class="sec-head reveal" style="--d:320ms">
+    <h2>{t.providerStats}</h2>
+    <span class="sub">{t.providerStatsSub}</span>
+  </div>
+
+  <TermStrip delay={340} terms={t.terms} label={t.termLabel} />
+
+  <div class="tbl-legend reveal" style="--d:360ms">
+    <span class="lg"><span class="ar">↑</span> {t.higherBetter}</span>
+    <span class="lg"><span class="ar">↓</span> {t.lowerBetter}</span>
+    <span>{t.descriptiveRows}</span>
+  </div>
+  <div class="reveal" style="--d:380ms">
+    <CompareTable
+      groups={cmp.groups}
+      soon={COMING_SOON}
+      labels={{
+        metric: t.table.metric,
+        soonHeader: t.table.soonHeader,
+        soonLabel: t.table.soonLabel.replace('{providers}', soonList),
+      }}
+    />
+  </div>
+
+  <Footer left={t.footerLeft} right={t.footerRight} />
+</section>
