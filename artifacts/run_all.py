@@ -18,7 +18,7 @@ Examples
     # run everything on the released DuckDB, 16 at a time (defaults)
     uv run python artifacts/run_all.py
 
-    # rebuild a DuckDB from JSONL first, then run everything against it
+    # rebuild a compact DuckDB from JSONL first, then run everything against it
     uv run python artifacts/run_all.py --build-db --input trace/syfi_coding_trace.jsonl --db trace/syfi_coding_trace.duckdb
 
     # serial, or a different width
@@ -56,8 +56,9 @@ DEFAULT_TIMING = ARTIFACTS_DIR / "llm_generation" / "timing_fit" / "timing_fit_t
 DEFAULT_JOBS = 16
 TIMING_BUILD_NAME = "timing_fit/build_trace"
 
-# Shared DuckDB foundation: one experiment materializes the trace once (artifacts/utils/trace_db.py),
-# and every db-backed experiment (`data="db"`) runs against it via `--db`, depending on this build.
+# Shared DuckDB foundation: one experiment materializes and compacts the trace once
+# (artifacts/utils/trace_db.py), and every db-backed experiment (`data="db"`) runs against it via
+# `--db`, depending on this build.
 BUILD_DB_NAME = "build"
 TRACE_DB_SCRIPT = "utils/trace_db.py"
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,7 @@ REPO_ROOT = EXP_DIR.parents[2]  # session_cost_distribution -> session -> artifa
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "web_analytics"))
 
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import pricing  # noqa: E402  (price_for / round_cost over artifacts/utils/pricing.json)
 import trace_db  # noqa: E402
 
@@ -250,6 +252,40 @@ def render_tex(units: dict[str, dict[str, list[dict]]], meta: dict[str, int]) ->
     return "\n".join(lines) + "\n"
 
 
+def render_md(units: dict[str, dict[str, list[dict]]], meta: dict[str, int]) -> str:
+    """GFM mirror of :func:`render_tex` for the web detail page (table only — the page adds a caption)."""
+    scope = units["merged"]
+    shares = cost_shares(scope["step"])
+    headers = ["Metric", "Avg", "P50", "P90", "P99", "% cost"]
+    sections: list[tuple[str, list[list[str]]]] = []
+    for gkey, glabel in GRANULARITIES:
+        rows: list[list[str]] = []
+        for ckey, _ in CATEGORIES:
+            cost = stats(series(scope[gkey], ckey, "c"))
+            share = "" if ckey == "total" else f"{shares[ckey] * 100:.1f}%"
+            rows.append(
+                [SHORT_LABEL[ckey], money(cost["avg"]), money(cost["p50"]), money(cost["p90"]), money(cost["p99"]), share]
+            )
+        sections.append((glabel, rows))
+    return md_table.section_tables(headers, sections, ["l", "r", "r", "r", "r", "r"])
+
+
+def render_headline(units: dict[str, dict[str, list[dict]]], meta: dict[str, int]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same merged data as the table so the card never drifts. Consumed by
+    web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by experiment slug).
+    """
+    scope = units["merged"]
+    shares = cost_shares(scope["step"])
+    sess = stats(series(scope["session"], "total", "c"))
+    return [
+        {"label": "Avg cost / session", "value": money(sess["avg"])},
+        {"label": "Prefix share of cost", "value": f"{shares['prefix'] * 100:.1f}%"},
+        {"label": "Append / output share", "value": f"{shares['append'] * 100:.0f}% / {shares['output'] * 100:.0f}%"},
+    ]
+
+
 def render_stdout(units: dict[str, dict[str, list[dict]]], meta: dict[str, int]) -> str:
     out: list[str] = []
     total = meta["priced"] + meta["unpriced"]
@@ -298,12 +334,17 @@ def main() -> int:
     finally:
         con.close()
 
-    out_path = Path(args.output_dir) / "session_cost_distribution.tex"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_tex(units, meta), encoding="utf-8")
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tex_path = out_dir / "session_cost_distribution.tex"
+    tex_path.write_text(render_tex(units, meta), encoding="utf-8")
+    md_path = out_dir / "session_cost_distribution.md"
+    md_path.write_text(render_md(units, meta), encoding="utf-8")
+    headline_path = out_dir / "headline.json"
+    headline_path.write_text(json.dumps(render_headline(units, meta), indent=2) + "\n", encoding="utf-8")
 
     print(render_stdout(units, meta))
-    print(f"Wrote {out_path}", file=sys.stderr)
+    print(f"Wrote {tex_path}, {md_path} and {headline_path}", file=sys.stderr)
     return 0
 
 

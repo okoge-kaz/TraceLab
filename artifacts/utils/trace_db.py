@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -256,6 +257,48 @@ def materialize(trace_path, db_path) -> Path:
     return db_path
 
 
+def compact_database(db_path) -> Path:
+    """Rewrite a DuckDB file into a fresh copy with no retained free blocks.
+
+    Building this DB from JSONL creates a large temporary ``_raw`` table and then drops it.
+    DuckDB keeps those freed blocks in the file for reuse, which is fine for local queries but bad
+    for upload/release artifacts because the apparent file size includes the free blocks. Exporting
+    and importing into a fresh file rewrites only the live tables.
+    """
+    db_path = Path(db_path)
+    parent = db_path.parent
+    export_dir = Path(tempfile.mkdtemp(prefix=f".{db_path.name}.export.", dir=parent))
+    compact_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{db_path.name}.compact.",
+            suffix=".duckdb",
+            dir=parent,
+            delete=False,
+        ) as fh:
+            compact_path = Path(fh.name)
+        compact_path.unlink()
+
+        src_con = duckdb.connect(str(db_path), read_only=True)
+        try:
+            src_con.execute(f"EXPORT DATABASE {_sql_quote(export_dir)}")
+        finally:
+            src_con.close()
+
+        dst_con = duckdb.connect(str(compact_path))
+        try:
+            dst_con.execute(f"IMPORT DATABASE {_sql_quote(export_dir)}")
+        finally:
+            dst_con.close()
+
+        compact_path.replace(db_path)
+        return db_path
+    finally:
+        shutil.rmtree(export_dir, ignore_errors=True)
+        if compact_path is not None and compact_path.exists():
+            compact_path.unlink()
+
+
 def _schema_version() -> str:
     """A short digest of this module's source — the cache key includes it so a schema change here
     (new column, type fix) invalidates stale caches automatically, even when the trace is unchanged."""
@@ -376,9 +419,19 @@ def _main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="Materialize a normalized trace into a DuckDB.")
     ap.add_argument("trace", type=Path)
     ap.add_argument("db", type=Path, nargs="?", default=None)
+    ap.add_argument(
+        "--no-compact",
+        action="store_true",
+        help=(
+            "skip the export/import compaction pass; faster, but the DB may retain large free "
+            "blocks after the temporary _raw table is dropped"
+        ),
+    )
     args = ap.parse_args(argv)
     db_path = args.db or _cache_db_path(args.trace)
     materialize(args.trace, db_path)
+    if not args.no_compact:
+        compact_database(db_path)
     con = connect(db_path, read_only=True)
     try:
         for tbl in ("rounds", "tool_calls", "timing_events"):

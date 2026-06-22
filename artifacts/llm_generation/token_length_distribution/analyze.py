@@ -22,6 +22,7 @@ Run with the standard trace-db CLI (``--db`` | ``-i/--input`` | ``-o/--output-di
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -31,6 +32,7 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parents[2]  # token_length_distribution -> llm_generation -> artifacts -> repo root
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
 
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import trace_db  # noqa: E402
 
 PERCENTILES = (25, 50, 90, 99)
@@ -106,6 +108,53 @@ def render_tex(stats: dict[str, dict[str, dict[str, float]]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_md(stats: dict[str, dict[str, dict[str, float]]]) -> str:
+    """GFM mirror of :func:`render_tex` for the web detail page (table only — the page adds a caption)."""
+    headers = ["Tokens", "Avg", "P25", "P50", "P90", "P99"]
+    sections: list[tuple[str, list[list[str]]]] = []
+    for column, mlabel in METRICS:
+        rows: list[list[str]] = []
+        for prov, plabel in PROVIDERS:
+            s = stats[prov][column]
+            rows.append([plabel] + [toks(s[k]) for k in ("avg", "p25", "p50", "p90", "p99")])
+        sections.append((mlabel, rows))
+    return md_table.section_tables(headers, sections, ["l", "r", "r", "r", "r", "r"])
+
+
+def _compact(x: float) -> str:
+    """Card-friendly token count: ``126K`` / ``1.2M`` for large values, plain integer otherwise."""
+    if x >= 1e6:
+        return f"{x / 1e6:.1f}M"
+    if x >= 1e3:
+        return f"{x / 1e3:.0f}K"
+    return f"{x:,.0f}"
+
+
+def _pair(stats: dict[str, dict[str, dict[str, float]]], column: str, key: str) -> str:
+    """Format a ``Claude / Codex`` value pair for ``column``/``key`` when the two providers differ
+    meaningfully (>5% relative); otherwise present the single representative (Claude) value."""
+    a = stats["claude"][column][key]
+    b = stats["codex"][column][key]
+    hi = max(a, b)
+    if hi > 0 and abs(a - b) / hi > 0.05:
+        return f"{_compact(a)} / {_compact(b)}"
+    return _compact(a)
+
+
+def render_headline(stats: dict[str, dict[str, dict[str, float]]]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same per-step stats as the table so the card never drifts; each value is the
+    per-step median (P50), shown as a ``Claude / Codex`` pair when the providers diverge. Consumed
+    by web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by experiment slug).
+    """
+    return [
+        {"label": "Median prefix tokens", "value": _pair(stats, "prefix_tokens", "p50")},
+        {"label": "Median append tokens", "value": _pair(stats, "newly_append_tokens", "p50")},
+        {"label": "Median output tokens", "value": _pair(stats, "output_tokens", "p50")},
+    ]
+
+
 def render_stdout(stats: dict[str, dict[str, dict[str, float]]]) -> str:
     out: list[str] = []
     for prov, plabel in PROVIDERS:
@@ -134,12 +183,17 @@ def main() -> int:
     finally:
         con.close()
 
-    out_path = Path(args.output_dir) / "token_length_distribution.tex"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_tex(stats), encoding="utf-8")
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tex_path = out_dir / "token_length_distribution.tex"
+    tex_path.write_text(render_tex(stats), encoding="utf-8")
+    md_path = out_dir / "token_length_distribution.md"
+    md_path.write_text(render_md(stats), encoding="utf-8")
+    headline_path = out_dir / "headline.json"
+    headline_path.write_text(json.dumps(render_headline(stats), indent=2) + "\n", encoding="utf-8")
 
     print(render_stdout(stats))
-    print(f"Wrote {out_path}", file=sys.stderr)
+    print(f"Wrote {tex_path}, {md_path} and {headline_path}", file=sys.stderr)
     return 0
 
 

@@ -35,6 +35,7 @@ Run with the standard trace-db CLI (``--db`` | ``-i/--input`` | ``-o/--output-di
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,7 @@ REPO_ROOT = EXP_DIR.parents[2]  # session_compaction_counts -> session -> artifa
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
 
 import growth  # noqa: E402  (for MAJOR_REDUCTION_MIN_TOKENS, so the size criterion stays in sync)
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import trace_db  # noqa: E402
 
 SCOPES = ("merged", "claude", "codex")
@@ -255,6 +257,85 @@ def render_tex(data: dict[str, dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_md(data: dict[str, dict[str, Any]]) -> str:
+    """GFM mirror of :func:`render_tex` for the web detail page (table only — the page adds a caption)."""
+    c, x = data["claude"], data["codex"]
+
+    def comp_share(s: dict[str, Any]) -> float:
+        return s["total"] / s["major_reductions"] * 100 if s["major_reductions"] else 0.0
+
+    def trig_pct(s: dict[str, Any], key: str) -> float:
+        total = s["user_initiated"] + s["tool_initiated"]
+        return s[key] / total * 100 if total else 0.0
+
+    headers = ["Metric", "Claude", "Codex"]
+    align = ["l", "r", "r"]
+
+    # Ungrouped top rows (no \multicolumn heading in the .tex), then the two grouped blocks.
+    top_rows = [
+        ["Sessions", f"{c['n_sessions']:,}", f"{x['n_sessions']:,}"],
+        ["Major reductions (≥64k drop)", f"{c['major_reductions']:,}", f"{x['major_reductions']:,}"],
+        [
+            " of which compactions",
+            f"{c['total']:,} ({comp_share(c):.1f}%)",
+            f"{x['total']:,} ({comp_share(x):.1f}%)",
+        ],
+        [
+            "Sessions with ≥1 compaction",
+            f"{c['sessions_with']:,} ({c['share_with'] * 100:.1f}%)",
+            f"{x['sessions_with']:,} ({x['share_with'] * 100:.1f}%)",
+        ],
+    ]
+    sections: list[tuple[str, list[list[str]]]] = [
+        (
+            "Compactions per session",
+            [
+                ["Avg (all sessions)", f"{c['avg']:.3f}", f"{x['avg']:.3f}"],
+                ["Avg (sessions with ≥1)", f"{c['avg_pos']:.2f}", f"{x['avg_pos']:.2f}"],
+                [
+                    "P90 / P99 (sessions with ≥1)",
+                    f"{c['p90_pos']:.0f} / {c['p99_pos']:.0f}",
+                    f"{x['p90_pos']:.0f} / {x['p99_pos']:.0f}",
+                ],
+            ],
+        ),
+        (
+            "Trigger",
+            [
+                [
+                    "User-initiated",
+                    f"{c['user_initiated']:,} ({trig_pct(c, 'user_initiated'):.1f}%)",
+                    f"{x['user_initiated']:,} ({trig_pct(x, 'user_initiated'):.1f}%)",
+                ],
+                [
+                    "Tool-initiated",
+                    f"{c['tool_initiated']:,} ({trig_pct(c, 'tool_initiated'):.1f}%)",
+                    f"{x['tool_initiated']:,} ({trig_pct(x, 'tool_initiated'):.1f}%)",
+                ],
+            ],
+        ),
+    ]
+    return md_table.gfm_table(headers, top_rows, align) + "\n" + md_table.section_tables(
+        headers, sections, align
+    )
+
+
+def render_headline(data: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same merged scope as the stdout/table so the card never drifts. Consumed by
+    web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by experiment slug).
+    """
+    m = data["merged"]
+    split_total = m["user_initiated"] + m["tool_initiated"]
+    tool_pct = m["tool_initiated"] / split_total * 100 if split_total else 0.0
+    return [
+        {"label": "Sessions w/ ≥1 compaction", "value": f"{m['share_with'] * 100:.1f}%"},
+        {"label": "Tool-initiated", "value": f"{tool_pct:.1f}%"},
+        {"label": "Avg / active session", "value": f"{m['avg_pos']:.1f}"},
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -295,16 +376,19 @@ def main() -> int:
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "session_compaction_counts.tex").write_text(
-        render_tex(data), encoding="utf-8"
-    )
+    tex_path = out_dir / "session_compaction_counts.tex"
+    tex_path.write_text(render_tex(data), encoding="utf-8")
+    md_path = out_dir / "session_compaction_counts.md"
+    md_path.write_text(render_md(data), encoding="utf-8")
+    headline_path = out_dir / "headline.json"
+    headline_path.write_text(json.dumps(render_headline(data), indent=2) + "\n", encoding="utf-8")
 
     print(
         f"criteria: drop>={args.min_drop_tokens:,}  near-max>={args.near_max_ratio:g}x  "
         f"no rebound to {args.rebound_ratio:g}x within {args.rebound_steps} steps\n"
     )
     print(render_table(data))
-    print(f"Wrote {out_dir / 'session_compaction_counts.tex'}", file=sys.stderr)
+    print(f"Wrote {tex_path}, {md_path} and {headline_path}", file=sys.stderr)
     return 0
 
 

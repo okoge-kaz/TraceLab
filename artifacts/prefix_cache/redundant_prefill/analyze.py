@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]  # experiment -> category -> artifacts -> repo root
 
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import trace_db  # noqa: E402
 from growth import TRIGGER_LABELS  # noqa: E402  (user_message->user, tool_result->tool_result)
 
@@ -237,6 +239,55 @@ def write_latex_table(path: Path, accums: dict[tuple[str, str], FreshAccum]) -> 
     path.write_text("\n".join(lines))
 
 
+def _fmt_millions_md(value: int) -> str:
+    return f"{value / 1e6:,.1f}M"
+
+
+def _fmt_pct_md(value: float | None) -> str:
+    return "--" if value is None else f"{value * 100:.1f}%"
+
+
+def _fmt_amp_md(value: float | None) -> str:
+    return "--" if value is None else f"{value:.1f}x"
+
+
+def render_md(accums: dict[tuple[str, str], FreshAccum]) -> str:
+    """GFM mirror of :func:`write_latex_table` for the web detail page (table only — the page
+    adds a caption). Same metrics, scopes, and trigger groups as the LaTeX table; the
+    ``\\multicolumn`` trigger groups become bold ``**label**`` section headings."""
+    metric_rows = (
+        ("Total append tokens", lambda a: _fmt_millions_md(a.append_tokens)),
+        ("Total fresh tokens", lambda a: _fmt_millions_md(a.fresh_tokens)),
+        ("Fresh % of append", lambda a: _fmt_pct_md(a.fresh_pct_of_append)),
+        ("Prefill amplification", lambda a: _fmt_amp_md(a.amplification)),
+    )
+    headers = ["Metric", "Claude", "Codex", "Total"]
+    sections: list[tuple[str, list[list[str]]]] = []
+    for trigger, group_label in TABLE_TRIGGERS:
+        rows: list[list[str]] = []
+        for metric_label, fn in metric_rows:
+            cells = [fn(accums.get((scope, trigger), FreshAccum())) for scope, _ in TABLE_SCOPES]
+            rows.append([metric_label, *cells])
+        sections.append((group_label, rows))
+    return md_table.section_tables(headers, sections, ["l", "r", "r", "r"])
+
+
+def render_headline(accums: dict[tuple[str, str], FreshAccum]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same merged accums as the table's "Total" column so the card never drifts.
+    Consumed by web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by
+    experiment slug).
+    """
+    overall = accums.get(("merged", "all"), FreshAccum())
+    tool_result = accums.get(("merged", "tool_result"), FreshAccum())
+    return [
+        {"label": "Fresh % of append", "value": _fmt_pct_md(overall.fresh_pct_of_append)},
+        {"label": "Prefill amplification", "value": _fmt_amp_md(overall.amplification)},
+        {"label": "Tool-result fresh %", "value": _fmt_pct_md(tool_result.fresh_pct_of_append)},
+    ]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -254,10 +305,16 @@ def main() -> int:
 
     summary_csv = output_dir / "redundant_prefill_summary.csv"
     latex_table = output_dir / "redundant_prefill_table.tex"
+    md_table_path = output_dir / "redundant_prefill_table.md"
+    headline_path = output_dir / "headline.json"
     write_summary_csv(summary_csv, accums)
     write_latex_table(latex_table, accums)
+    md_table_path.write_text(render_md(accums), encoding="utf-8")
+    headline_path.write_text(json.dumps(render_headline(accums), indent=2) + "\n", encoding="utf-8")
     print(f"summary_csv={summary_csv}")
     print(f"latex_table={latex_table}")
+    print(f"md_table={md_table_path}")
+    print(f"headline={headline_path}")
 
     merged_all = accums.get(("merged", "all"), FreshAccum())
     print(

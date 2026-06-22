@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
 import sys
 from pathlib import Path
@@ -24,6 +25,7 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parents[2]  # experiment -> tool_calls -> artifacts -> repo root
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
 
+import md_table  # noqa: E402  (gfm_table for the web detail page)
 import trace_db  # noqa: E402
 
 
@@ -248,6 +250,71 @@ def render_paper_tex(rows: list[dict[str, Any]]) -> str:
         "\\end{table}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _md_tool_label(label: str) -> str:
+    if label == "All timed":
+        return label
+    return f"`{label}`"
+
+
+def render_paper_md(rows: list[dict[str, Any]]) -> str:
+    """GFM mirror of :func:`render_paper_tex` for the web detail page (table only — the
+    page adds a caption). Same numbers and column order as the paper float."""
+    headers = ["Tool", "Calls", "E2E", "Int.", "Res.", "Avg", "P50/90/99"]
+    body: list[list[str]] = []
+    for row in rows:
+        percentiles = (
+            f"{_fmt_seconds(row['p50_residual_s'])}/"
+            f"{_fmt_seconds(row['p90_residual_s'])}/"
+            f"{_fmt_seconds(row['p99_residual_s'], 1)}s"
+        )
+        residual_h = _fmt_hours(row["residual_h"], 2 if float(row["residual_h"]) < 1 else 1)
+        body.append(
+            [
+                _md_tool_label(row["tool_group"]),
+                _fmt_calls(row["calls"]),
+                f"{_fmt_hours(row['e2e_h'])}h",
+                f"{_fmt_hours(row['internal_h'])}h",
+                f"{residual_h}h",
+                f"{_fmt_seconds(row['avg_residual_s'])}s",
+                percentiles,
+            ]
+        )
+    return md_table.gfm_table(headers, body, ["l", "r", "r", "r", "r", "r", "r"])
+
+
+def render_headline(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same ``paper_table_rows`` aggregate as the table so the card never drifts:
+    the ``All timed`` row carries total E2E/residual hours and residual percentiles, and the
+    ``exec_command`` group row carries the dominant per-tool residual. Consumed by
+    web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by experiment slug).
+    """
+    by_group = {row["tool_group"]: row for row in rows}
+    all_timed = by_group.get("All timed", {})
+    exec_row = by_group.get("exec_command", {})
+
+    residual_h = float(all_timed.get("residual_h") or 0)
+    e2e_h = float(all_timed.get("e2e_h") or 0)
+    residual_pct = 100.0 * residual_h / e2e_h if e2e_h else 0.0
+
+    cards = [
+        {
+            "label": "Residual (E2E − internal)",
+            "value": f"{_fmt_hours(residual_h)}h ({residual_pct:.0f}%)",
+        },
+        {
+            "label": "Top tool residual",
+            "value": f"{_fmt_hours(exec_row.get('residual_h') or 0)}h",
+        },
+        {
+            "label": "Median residual",
+            "value": f"{_fmt_seconds(all_timed.get('p50_residual_s') or 0)}s",
+        },
+    ]
+    return cards
 
 
 def direct_human_rows(con) -> list[dict[str, Any]]:
@@ -617,6 +684,12 @@ def main() -> None:
     write_analysis(out_dir / "result_analysis.md", coverage, residuals, direct_human, categories, buckets)
     (out_dir / "codex_tool_e2e_internal.tex").write_text(
         render_paper_tex(paper_rows), encoding="utf-8"
+    )
+    (out_dir / "codex_tool_e2e_internal.md").write_text(
+        render_paper_md(paper_rows), encoding="utf-8"
+    )
+    (out_dir / "headline.json").write_text(
+        json.dumps(render_headline(paper_rows), indent=2) + "\n", encoding="utf-8"
     )
 
     print(f"Wrote Codex wall/internal gap audit to {out_dir}")

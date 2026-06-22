@@ -13,6 +13,7 @@ REPO_ROOT = SCRIPT_DIR.parents[2]  # experiment -> category -> artifacts -> repo
 import sys  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import trace_db  # noqa: E402
 from growth import (  # noqa: E402
     EVENT_COLUMNS,
@@ -197,6 +198,50 @@ def write_filtered_events_csv(
     return len(selected)
 
 
+def write_markdown_table(md_path: Path, summary_csv: Path) -> None:
+    """GFM mirror of the paper float ``tab:context_growth_and_compaction`` (Claude vs Codex).
+
+    Read back from the just-written summary CSV so the web detail-page table reconciles with the
+    ``.tex`` numbers exactly. Three grouped blocks (All / User-initiated / Tool-initiated steps),
+    each a Metric | Claude | Codex table; the negative-reduction breakdown rows are indented with
+    non-breaking spaces since GFM has no row spanning.
+    """
+    rows_by_key: dict[tuple[str, str], dict[str, str]] = {}
+    with summary_csv.open(newline="") as fh:
+        for row in csv.DictReader(fh):
+            rows_by_key[(row["scope"], row["trigger"])] = row
+
+    def steps(r: dict[str, str]) -> str:
+        return f"{int(r['rounds']):,}" if r.get("rounds") else "--"
+
+    def growth(r: dict[str, str]) -> str:
+        return f"{round(float(r['avg_positive_growth'])):,}" if r.get("avg_positive_growth") else "--"
+
+    def pct(r: dict[str, str], key: str) -> str:
+        return r.get(key) or "--"
+
+    def metric_rows(trigger: str) -> list[list[str]]:
+        c = rows_by_key.get(("claude", trigger), {})
+        x = rows_by_key.get(("codex", trigger), {})
+        return [
+            ["Steps", steps(c), steps(x)],
+            ["Positive (growth) %", pct(c, "positive_pct"), pct(x, "positive_pct")],
+            ["Negative (reduction) %", pct(c, "negative_pct"), pct(x, "negative_pct")],
+            ["  Micro %", pct(c, "micro_pct"), pct(x, "micro_pct")],
+            ["  Ordinary %", pct(c, "ordinary_pct"), pct(x, "ordinary_pct")],
+            ["  Major reduction %", pct(c, "major_pct"), pct(x, "major_pct")],
+            ["Avg positive growth", growth(c), growth(x)],
+        ]
+
+    sections = [
+        ("All steps", metric_rows("all")),
+        ("User-initiated steps", metric_rows("user")),
+        ("Tool-initiated steps", metric_rows("tool_result")),
+    ]
+    md = md_table.section_tables(["Metric", "Claude", "Codex"], sections, ["l", "r", "r"])
+    md_path.write_text(md, encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -293,6 +338,10 @@ def main() -> int:
     )
     write_summary_csv(summary_csv, stats)
     print(f"summary_csv={summary_csv}")
+
+    md_path = output_dir / "total_input_growth.md"
+    write_markdown_table(md_path, summary_csv)
+    print(f"md_table={md_path}")
 
     if not args.no_drilldowns:
         events_csv = args.events_csv or output_dir / "total_input_growth_events.csv"

@@ -40,6 +40,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]  # experiment -> category -> artifacts -> repo root
 
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
+import md_table  # noqa: E402  (gfm_table for the web detail page)
 import trace_db  # noqa: E402
 import png_sidecar  # noqa: E402
 
@@ -376,6 +377,42 @@ def write_latex_hit_rate_table(
     path.write_text("\n".join(lines))
 
 
+def format_pct_one_md(value: float | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value * 100:.1f}%"
+
+
+def write_markdown_hit_rate_table(
+    path: Path,
+    groups: dict[tuple[str, str], HitRatioGroup],
+) -> None:
+    """GFM mirror of :func:`write_latex_hit_rate_table` for the web detail page (table only)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        ("Prefix cache-hit rate", "all"),
+        ("Prefix hit rate (user-initiated)", "user"),
+        ("Prefix hit rate (tool-result)", "tool_result"),
+    ]
+    scopes = ["claude", "codex", "merged"]
+    body = [
+        [
+            label,
+            *[
+                format_pct_one_md(
+                    groups.get((scope, trigger), HitRatioGroup()).token_weighted_hit_rate
+                )
+                for scope in scopes
+            ],
+        ]
+        for label, trigger in rows
+    ]
+    path.write_text(
+        md_table.gfm_table(["Metric", "Claude", "Codex", "Total"], body, ["l", "r", "r", "r"]),
+        encoding="utf-8",
+    )
+
+
 def write_summary_csv(path: Path, groups: dict[tuple[str, str], HitRatioGroup]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     columns = [
@@ -627,16 +664,19 @@ def main() -> int:
     round_split_csv = output_dir / "cache_hit_ratio_round_split.csv"
     token_weighted_csv = output_dir / "cache_hit_ratio_token_weighted.csv"
     latex_table = output_dir / "prefix_cache_hit_rate_table.tex"
+    md_table_path = output_dir / "cache_hit_ratio_table.md"
     write_summary_csv(summary_csv, groups)
     write_bins_csv(bins_csv, groups)
     write_round_split_csv(round_split_csv, groups)
     write_token_weighted_csv(token_weighted_csv, token_weighted_groups)
     write_latex_hit_rate_table(latex_table, token_weighted_groups)
+    write_markdown_hit_rate_table(md_table_path, token_weighted_groups)
     print(f"summary_csv={summary_csv}")
     print(f"bins_csv={bins_csv}")
     print(f"round_split_csv={round_split_csv}")
     print(f"token_weighted_csv={token_weighted_csv}")
     print(f"latex_table={latex_table}")
+    print(f"md_table={md_table_path}")
     if not args.no_plots:
         round_plot = output_dir / "cache_hit_ratio_histogram.png"
         append_plot = output_dir / "cache_hit_ratio_append_weighted_histogram.png"

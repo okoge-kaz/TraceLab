@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parents[2]  # session_internal_counts -> session -> artifacts -> repo root
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
 
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import trace_db  # noqa: E402
 
 SCOPES = ("merged", "claude", "codex")
@@ -249,6 +251,45 @@ def render_tex(merged: dict[str, dict[str, float]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_md(merged: dict[str, dict[str, float]]) -> str:
+    """GFM mirror of :func:`render_tex` for the web detail page (table only — the page adds a caption).
+
+    Each LaTeX ``\\multicolumn`` band (Per session / Per request / Per step) becomes its own GFM
+    table under a bold heading, since GFM cannot span columns.
+    """
+    headers = ["Metric", "Avg", "P25", "P50", "P90", "P99"]
+    sections: list[tuple[str, list[list[str]]]] = []
+    current_group = None
+    rows: list[list[str]] = []
+    for key, label, group in ROWS:
+        if group != current_group:
+            if current_group is not None:
+                sections.append((GROUP_LABEL[current_group], rows))
+            rows = []
+            current_group = group
+        marker = "†" if key == "user_steps" else ""
+        s = merged[key]
+        rows.append(
+            [f"{label}{marker}", _avg(s["avg"]), _pct(s["p25"]), _pct(s["p50"]), _pct(s["p90"]), _pct(s["p99"])]
+        )
+    if current_group is not None:
+        sections.append((GROUP_LABEL[current_group], rows))
+    return md_table.section_tables(headers, sections, ["l", "r", "r", "r", "r", "r"])
+
+
+def render_headline(merged: dict[str, dict[str, float]]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same merged summaries as the table so the card never drifts. Consumed by
+    web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by experiment slug).
+    """
+    return [
+        {"label": "Requests / session", "value": _avg(merged["requests"]["avg"])},
+        {"label": "Tool calls / request", "value": _avg(merged["tool_calls_per_request"]["avg"])},
+        {"label": "Tool calls / step", "value": _avg(merged["tool_calls_per_step"]["avg"])},
+    ]
+
+
 def render_table(data: dict[str, dict[str, dict[str, float]]]) -> str:
     out: list[str] = []
     for scope in SCOPES:
@@ -280,12 +321,17 @@ def main() -> int:
 
     data = {scope: {key: summarize(vals) for key, vals in metrics.items()} for scope, metrics in raw.items()}
 
-    out_path = Path(args.output_dir) / "session_internal_counts.tex"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_tex(data["merged"]), encoding="utf-8")
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tex_path = out_dir / "session_internal_counts.tex"
+    tex_path.write_text(render_tex(data["merged"]), encoding="utf-8")
+    md_path = out_dir / "session_internal_counts.md"
+    md_path.write_text(render_md(data["merged"]), encoding="utf-8")
+    headline_path = out_dir / "headline.json"
+    headline_path.write_text(json.dumps(render_headline(data["merged"]), indent=2) + "\n", encoding="utf-8")
 
     print(render_table(data))
-    print(f"Wrote {out_path}", file=sys.stderr)
+    print(f"Wrote {tex_path}, {md_path} and {headline_path}", file=sys.stderr)
     return 0
 
 

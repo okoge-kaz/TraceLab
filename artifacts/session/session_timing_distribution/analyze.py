@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,7 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parents[2]  # session_timing_distribution -> session -> artifacts -> repo root
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
 
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import trace_db  # noqa: E402
 from timing import human_waits_from_event_pairs  # noqa: E402
 
@@ -348,6 +350,40 @@ def render_tex(units: dict[str, dict[str, list[dict]]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_md(units: dict[str, dict[str, list[dict]]]) -> str:
+    """GFM mirror of :func:`render_tex` for the web detail page (table only — the page adds a caption)."""
+    scope = units["merged"]
+    headers = ["Metric", "Avg", "P50", "P90", "P99", "% time"]
+    sections: list[tuple[str, list[list[str]]]] = []
+    for gkey, glabel in GRANULARITIES:
+        unit_list = scope[UNIT_KEY_BY_GRAN[gkey]]
+        sh = shares(unit_list, gkey)
+        rows: list[list[str]] = []
+        for ckey, clabel, has_share in CATS_BY_GRAN[gkey]:
+            s = stats(series(unit_list, gkey, ckey))
+            share = f"{sh[ckey] * 100:.1f}%" if has_share and ckey in sh else ""
+            rows.append([clabel, dur(s["avg"]), dur(s["p50"]), dur(s["p90"]), dur(s["p99"]), share])
+        sections.append((glabel, rows))
+    return md_table.section_tables(headers, sections, ["l", "r", "r", "r", "r", "r"])
+
+
+def render_headline(units: dict[str, dict[str, list[dict]]]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same merged data as the table so the card never drifts. Consumed by
+    web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by experiment slug).
+    """
+    scope = units["merged"]
+    sess_sh = shares(scope["session"], "session")  # human / gen / tool share of wall-clock
+    req = stats(series(scope["request"], "request", "total"))  # per-request e2e
+    req_sh = shares(scope["request"], "request")  # gen / tool share of response time
+    return [
+        {"label": "Human thinking", "value": f"{sess_sh['human'] * 100:.1f}%"},
+        {"label": "Avg response / request", "value": dur(req["avg"])},
+        {"label": "Request: gen / tool", "value": f"{req_sh['gen'] * 100:.0f}% / {req_sh['tool'] * 100:.0f}%"},
+    ]
+
+
 def render_stdout(units: dict[str, dict[str, list[dict]]]) -> str:
     out: list[str] = []
     for scope in SCOPES:
@@ -384,12 +420,17 @@ def main() -> int:
     finally:
         con.close()
 
-    out_path = Path(args.output_dir) / "session_timing_distribution.tex"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_tex(units), encoding="utf-8")
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tex_path = out_dir / "session_timing_distribution.tex"
+    tex_path.write_text(render_tex(units), encoding="utf-8")
+    md_path = out_dir / "session_timing_distribution.md"
+    md_path.write_text(render_md(units), encoding="utf-8")
+    headline_path = out_dir / "headline.json"
+    headline_path.write_text(json.dumps(render_headline(units), indent=2) + "\n", encoding="utf-8")
 
     print(render_stdout(units))
-    print(f"Wrote {out_path}", file=sys.stderr)
+    print(f"Wrote {tex_path}, {md_path} and {headline_path}", file=sys.stderr)
     return 0
 
 

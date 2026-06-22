@@ -2,7 +2,7 @@
 % edit by hand; re-run on the trace to refresh.
 \begin{table}[t]
 \centering
-\caption{Per-session, per-request, and per-step cost (USD) by category. List prices (\texttt{pricing.json}, as of 2026-06): new input (append) at the fresh-input rate, cached input (prefix) at the cache-read rate, output at the output rate; 99.1\% of rounds priced. \emph{\% cost} is each category's share of total spend (identical across groupings).}
+\caption{Per-session, per-request, and per-step cost (USD) by category. List prices (\texttt{pricing.json}, as of 2026-06): append tokens at the fresh-input rate, prefix tokens at the cache-read rate, output tokens at the output rate; 99.1\% of rounds priced. \emph{\% cost} is each category's share of total spend (identical across groupings).}
 \label{tab:cost_distribution}
 \small
 \setlength{\tabcolsep}{4pt}
@@ -13,21 +13,21 @@
 \midrule
 \multicolumn{6}{@{}l}{\emph{Per session}} \\
 \quad Total & \$9.36 & \$0.59 & \$13.2 & \$172 &  \\
-\quad New input & \$2.50 & \$0.21 & \$3.33 & \$40.2 & 26.7\% \\
-\quad Cached & \$5.77 & \$0.17 & \$7.55 & \$111 & 61.7\% \\
-\quad Output & \$1.09 & \$0.16 & \$1.92 & \$16.9 & 11.6\% \\
+\quad Append tokens & \$2.50 & \$0.21 & \$3.33 & \$40.2 & 26.7\% \\
+\quad Prefix tokens & \$5.77 & \$0.17 & \$7.55 & \$111 & 61.7\% \\
+\quad Output tokens & \$1.09 & \$0.16 & \$1.92 & \$16.9 & 11.6\% \\
 \addlinespace
 \multicolumn{6}{@{}l}{\emph{Per request}} \\
 \quad Total & \$0.97 & \$0.32 & \$2.35 & \$8.94 &  \\
-\quad New input & \$0.25 & \$0.03 & \$0.68 & \$3.22 & 26.7\% \\
-\quad Cached & \$0.60 & \$0.16 & \$1.35 & \$6.51 & 61.7\% \\
-\quad Output & \$0.11 & \$0.03 & \$0.29 & \$1.08 & 11.6\% \\
+\quad Append tokens & \$0.25 & \$0.03 & \$0.68 & \$3.22 & 26.7\% \\
+\quad Prefix tokens & \$0.60 & \$0.16 & \$1.35 & \$6.51 & 61.7\% \\
+\quad Output tokens & \$0.11 & \$0.03 & \$0.29 & \$1.08 & 11.6\% \\
 \addlinespace
 \multicolumn{6}{@{}l}{\emph{Per step}} \\
 \quad Total & \$0.11 & \$0.07 & \$0.20 & \$0.67 &  \\
-\quad New input & \$0.03 & \$0.00 & \$0.03 & \$0.62 & 26.7\% \\
-\quad Cached & \$0.07 & \$0.05 & \$0.12 & \$0.41 & 61.7\% \\
-\quad Output & \$0.01 & \$0.01 & \$0.03 & \$0.12 & 11.6\% \\
+\quad Append tokens & \$0.03 & \$0.00 & \$0.03 & \$0.62 & 26.7\% \\
+\quad Prefix tokens & \$0.07 & \$0.05 & \$0.12 & \$0.41 & 61.7\% \\
+\quad Output tokens & \$0.01 & \$0.01 & \$0.03 & \$0.12 & 11.6\% \\
 \bottomrule
 \end{tabular}
 \end{table}

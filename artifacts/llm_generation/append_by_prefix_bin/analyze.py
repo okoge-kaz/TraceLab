@@ -18,6 +18,7 @@ Run with the standard trace-db CLI (``--db`` | ``-i/--input`` | ``-o/--output-di
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -27,6 +28,7 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parents[2]  # append_by_prefix_bin -> llm_generation -> artifacts -> repo root
 sys.path.insert(0, str(REPO_ROOT / "artifacts" / "utils"))
 
+import md_table  # noqa: E402  (gfm_table / section_tables for the web detail page)
 import trace_db  # noqa: E402
 
 PROVIDERS = ("claude", "codex")
@@ -112,6 +114,52 @@ def render_tex(data: dict[str, dict[str, dict[str, float]]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_md(data: dict[str, dict[str, dict[str, float]]]) -> str:
+    """GFM mirror of :func:`render_tex` for the web detail page (table only — the page adds a caption)."""
+    headers = ["Prefix", "Steps", "Avg", "P50", "P90", "P99"]
+    sections: list[tuple[str, list[list[str]]]] = []
+    for provider in PROVIDERS:
+        rows: list[list[str]] = []
+        for label, _lo, _hi in BINS:
+            s = data[provider][label]
+            plain = label.replace("$", "").replace("--", "-")
+            cell = (lambda k: "--" if s["n"] == 0 else toks(s[k]))
+            rows.append([plain, f"{s['n']:,}", cell("avg"), cell("p50"), cell("p90"), cell("p99")])
+        sections.append((provider.capitalize(), rows))
+    return md_table.section_tables(headers, sections, ["l", "r", "r", "r", "r", "r"])
+
+
+def render_headline(data: dict[str, dict[str, dict[str, float]]]) -> list[dict[str, str]]:
+    """The 2–4 most important numbers for the Overview gallery card (label + formatted value).
+
+    Derived from the same per-provider stats as the table so the card never drifts: the cold-start
+    vs warmed median append (the dominant provider's p50 in the named bin), and the busiest bin.
+    Consumed by web/scripts/build-payload.mjs (aggregated into public/data/headlines.json by slug).
+    """
+    cold_label = BINS[0][0]  # "<1k" -- cold start, no cache
+    warm_label = "64--128k"  # first bin past 64k -- well-warmed prefix
+
+    def busiest_p50(label: str) -> dict[str, float]:
+        """The named bin's row from whichever provider logged the most steps there."""
+        return max((data[p][label] for p in PROVIDERS), key=lambda s: s["n"])
+
+    cold = busiest_p50(cold_label)
+    warm = busiest_p50(warm_label)
+
+    # Busiest prefix bin overall, across providers and bins (by step count).
+    top_provider, top_label, top_row = max(
+        ((p, label, data[p][label]) for p in PROVIDERS for label, _lo, _hi in BINS),
+        key=lambda t: t[2]["n"],
+    )
+    top_plain = top_label.replace("$", "").replace("--", "-")
+
+    return [
+        {"label": "Median append, <1k prefix", "value": toks(cold["p50"])},
+        {"label": "Median append, >64k prefix", "value": toks(warm["p50"])},
+        {"label": "Busiest prefix bin", "value": f"{top_plain} ({top_row['n']:,} steps)"},
+    ]
+
+
 def render_stdout(data: dict[str, dict[str, dict[str, float]]]) -> str:
     out: list[str] = []
     for provider in PROVIDERS:
@@ -142,12 +190,17 @@ def main() -> int:
     finally:
         con.close()
 
-    out_path = Path(args.output_dir) / "append_by_prefix_bin.tex"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render_tex(data), encoding="utf-8")
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tex_path = out_dir / "append_by_prefix_bin.tex"
+    tex_path.write_text(render_tex(data), encoding="utf-8")
+    md_path = out_dir / "append_by_prefix_bin.md"
+    md_path.write_text(render_md(data), encoding="utf-8")
+    headline_path = out_dir / "headline.json"
+    headline_path.write_text(json.dumps(render_headline(data), indent=2) + "\n", encoding="utf-8")
 
     print(render_stdout(data))
-    print(f"Wrote {out_path}", file=sys.stderr)
+    print(f"Wrote {tex_path}, {md_path} and {headline_path}", file=sys.stderr)
     return 0
 
 
