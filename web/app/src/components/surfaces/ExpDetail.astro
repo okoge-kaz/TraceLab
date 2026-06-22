@@ -1,0 +1,308 @@
+---
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createMarkdownProcessor } from '@astrojs/markdown-remark';
+import Base from '../../layouts/Base.astro';
+import Footer from '../Footer.astro';
+import Lightbox from '../Lightbox.astro';
+import TermStrip from '../TermStrip.astro';
+import { experiments, type Experiment } from '../../lib/experiments';
+import { gallerySectionKey } from '../../lib/figures';
+import { parseExperimentReadme, analysisForFigure } from '../../lib/readme';
+import { localeFromUrl, useTranslations } from '../../i18n';
+
+// Shared experiment-detail surface for both /exp/<slug> (English) and /zh/exp/<slug> (Chinese).
+// Locale comes from the rendering page's URL; in Chinese it prefers the sibling README.zh.md and
+// localizes the chrome, while figure/table .md outputs (numbers) are read as-is.
+const { exp } = Astro.props as { exp: Experiment };
+const locale = localeFromUrl(Astro.url);
+const zh = locale === 'zh';
+const base = zh ? '/zh' : '';
+const T = useTranslations(Astro.url);
+
+// Experiment titles/blurbs and figure captions live in lib/experiments.ts (English). Localize them
+// through the same i18n maps the Overview gallery uses (en maps are empty → identity fallback).
+const cardOf = (title: string) => T.figures.cards[title];
+const locTitle = (title: string) => cardOf(title)?.title ?? title;
+const locCaption = (caption: string) => T.figures.captions[caption] ?? caption;
+const expTitle = locTitle(exp.title);
+const expBlurb = cardOf(exp.title)?.blurb ?? exp.blurb;
+
+// In Chinese, read the paired README.zh.md (fall back to README.md if a translation is missing).
+// Table/figure .md outputs are not localized, so only README.md is swapped.
+function readReadme(rel: string): string {
+  const candidates =
+    zh && /README\.md$/.test(rel) ? [rel.replace(/README\.md$/, 'README.zh.md'), rel] : [rel];
+  for (const r of candidates) {
+    for (const c of [resolve(process.cwd(), '../..', r), resolve(process.cwd(), r)]) {
+      if (existsSync(c)) return readFileSync(c, 'utf-8');
+    }
+  }
+  return '';
+}
+const parsed = parseExperimentReadme(readReadme(exp.readme));
+
+// syntaxHighlight off so the warm .readme pre styling applies (no cold shiki theme).
+const processor = await createMarkdownProcessor({ syntaxHighlight: false });
+const renderMd = async (md: string) => (md ? (await processor.render(md)).code : '');
+
+const overviewHtml = await renderMd(parsed.overviewMd);
+const detailSections = await Promise.all(
+  parsed.detailsSections.map(async (section) => ({
+    ...section,
+    html: await renderMd(section.body),
+  })),
+);
+const hasDetails = detailSections.length > 0;
+const figures = await Promise.all(
+  exp.figures.map(async (f) => ({
+    ...f,
+    caption: locCaption(f.caption),
+    analysisHtml: await renderMd(analysisForFigure(parsed, f.src)),
+  })),
+);
+const tables = (
+  await Promise.all(
+    (exp.tables ?? []).map(async (t) => ({
+      ...t,
+      caption: locCaption(t.caption),
+      html: await renderMd(readReadme(t.src)),
+      analysisHtml: await renderMd(analysisForFigure(parsed, t.src)),
+    })),
+  )
+).filter((t) => t.html);
+
+const sec = T.figures.sections as Record<string, { title: string }>;
+const categoryLabels: Record<string, string> = {
+  session: sec.session?.title ?? 'Session',
+  llm_generation: sec.llm_generation?.title ?? 'LLM generation',
+  tool_calls: sec.tool_calls?.title ?? 'Tool calls',
+  prefix_cache: sec.prefix_cache?.title ?? 'Prefix cache',
+};
+const categoryOrder = ['session', 'llm_generation', 'tool_calls', 'prefix_cache'];
+const experimentGroups = categoryOrder
+  .map((category) => ({
+    category,
+    title: categoryLabels[category] ?? category,
+    items: experiments.filter((item) => gallerySectionKey(item.category) === category),
+  }))
+  .filter((group) => group.items.length > 0);
+const expDisplayCategory = gallerySectionKey(exp.category);
+const currentIndex = Math.max(0, experiments.findIndex((item) => item.slug === exp.slug));
+const prevExp = experiments[(currentIndex + experiments.length - 1) % experiments.length];
+const nextExp = experiments[(currentIndex + 1) % experiments.length];
+
+const ui = zh
+  ? {
+      problem: '问题',
+      figures: '图表',
+      tables: '表格',
+      reference: '参考',
+      allFigures: '全部图表',
+      previous: '上一篇',
+      next: '下一篇',
+      experimentPages: '实验页面',
+      onThisPage: '本页导航',
+      adjacent: '相邻实验页',
+      noWriteup: '该实验暂无说明。',
+      backAnalysis: '返回你的分析',
+      figLabel: '图',
+      tableLabel: '表',
+      footer: 'SyFI TraceLab · 实验详情',
+    }
+  : {
+      problem: 'Problem',
+      figures: 'Figures',
+      tables: 'Tables',
+      reference: 'Reference',
+      allFigures: 'All figures',
+      previous: 'Previous',
+      next: 'Next',
+      experimentPages: 'Experiment pages',
+      onThisPage: 'On this page',
+      adjacent: 'Adjacent experiment pages',
+      noWriteup: 'No write-up found for this experiment yet.',
+      backAnalysis: 'Back to your analysis',
+      figLabel: 'Fig.',
+      tableLabel: 'Table',
+      footer: 'SyFI TraceLab · experiment detail',
+    };
+const analyzeHref = `${base}/#analyze`;
+---
+
+<Base title={`${expTitle} · SyFI TraceLab`}>
+  {/* Personal mode (?personal=1, linked from the Analyze tab): describe the experiment via its
+      overview but hide the public-pool figures + reference sections — the user's own results live
+      on the Analyze tab. Set the html class synchronously so nothing flashes before being hidden. */}
+  <script define:vars={{ analyzeHref, backAnalysis: ui.backAnalysis }}>
+    if (location.search.includes('personal')) {
+      document.documentElement.classList.add('personal-exp');
+      addEventListener('DOMContentLoaded', () => {
+        const back = document.getElementById('back-link');
+        if (back) {
+          back.setAttribute('href', analyzeHref);
+          const label = back.querySelector('.back-label');
+          if (label) label.textContent = backAnalysis;
+        }
+      });
+    }
+  </script>
+  <section class="surface live exp-page" aria-label={expTitle}>
+    <a id="back-link" class="back-link reveal" href={`${base}/`} style="--d:0ms">
+      <span aria-hidden="true">←</span> <span class="back-label">{ui.allFigures}</span>
+    </a>
+
+    <div class="exp-layout">
+      {/* Sticky rail: title + cross-experiment navigation. The prose itself lives wide in the main
+          column so the overview/analysis read large, not squeezed into the narrow rail. */}
+      <aside class="exp-rail reveal" style="--d:40ms">
+        <div class="hero exp-hero">
+          <span class="eyebrow">{categoryLabels[expDisplayCategory] ?? expDisplayCategory}</span>
+          <h1>{expTitle}</h1>
+          <p class="lede">{expBlurb}</p>
+        </div>
+
+        <nav class="exp-atlas-nav" aria-label={ui.experimentPages}>
+          <div class="exp-nav-label">{ui.experimentPages}</div>
+          {experimentGroups.map((group) => (
+            <div class="exp-nav-group">
+              <div class="exp-nav-group-title">{group.title}</div>
+              <div class="exp-nav-list">
+                {group.items.map((item) => (
+                  <a
+                    href={`${base}/exp/${item.slug}`}
+                    class={item.slug === exp.slug ? 'is-current' : undefined}
+                    aria-current={item.slug === exp.slug ? 'page' : undefined}
+                  >
+                    {locTitle(item.title)}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <div class="exp-main">
+        <TermStrip delay={70} terms={T.compare.terms} label={T.compare.termLabel} />
+
+        {overviewHtml && (
+          <section id="overview" class="exp-section reveal" style="--d:80ms">
+            <header class="exp-sec-head"><span class="eyebrow">{ui.problem}</span></header>
+            <article class="readme exp-overview" set:html={overviewHtml} />
+          </section>
+        )}
+        {!overviewHtml && !hasDetails && tables.length === 0 && (
+          <p class="lede reveal" style="--d:80ms">{ui.noWriteup}</p>
+        )}
+
+        {figures.length > 0 && (
+          <section id="figures" class="exp-section reveal" style="--d:120ms" aria-label={ui.figures}>
+            <header class="exp-sec-head">
+              <span class="eyebrow">{ui.figures}</span>
+              {figures.length > 1 && <span class="sec-count">{figures.length}</span>}
+            </header>
+            <div class="exp-figures">
+              {figures.map((f, i) => (
+                <figure class="fig">
+                  <div class="fig-plate">
+                    <div class="canvas">
+                      <img src={f.src} alt={f.caption} data-zoomable data-caption={f.caption} loading="lazy" onerror="this.closest('.fig')?.classList.add('fig--pending')" />
+                    </div>
+                  </div>
+                  <figcaption><span class="fig-n">{ui.figLabel}&nbsp;{i + 1}</span>{f.caption}</figcaption>
+                  {f.analysisHtml && <div class="fig-analysis readme" set:html={f.analysisHtml} />}
+                </figure>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {tables.length > 0 && (
+          <section id="tables" class="exp-section reveal" style="--d:140ms" aria-label={ui.tables}>
+            <header class="exp-sec-head">
+              <span class="eyebrow">{ui.tables}</span>
+              {tables.length > 1 && <span class="sec-count">{tables.length}</span>}
+            </header>
+            <div class="exp-tables">
+              {tables.map((tbl, i) => (
+                <figure class="exp-table">
+                  <div class="readme exp-table-body" set:html={tbl.html} />
+                  <figcaption><span class="fig-n">{ui.tableLabel}&nbsp;{i + 1}</span>{tbl.caption}</figcaption>
+                  {tbl.analysisHtml && <div class="fig-analysis readme" set:html={tbl.analysisHtml} />}
+                </figure>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {hasDetails && (
+          <section id="details" class="exp-section exp-reference reveal" style="--d:160ms">
+            <header class="exp-sec-head"><span class="eyebrow">{ui.reference}</span></header>
+            <div class="exp-reference-list">
+              {detailSections.map((section) => (
+                <details class="exp-reference-item">
+                  <summary class="exp-reference-summary">
+                    <span class="exp-reference-title">{section.title}</span>
+                    <span class="exp-reference-icon" aria-hidden="true"></span>
+                  </summary>
+                  <article class="readme exp-details" set:html={section.html} />
+                </details>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <nav class="exp-step-nav reveal" style="--d:190ms" aria-label={ui.adjacent}>
+          <a href={`${base}/exp/${prevExp.slug}`} class="prev">
+            <span>{ui.previous}</span>
+            <strong>{locTitle(prevExp.title)}</strong>
+          </a>
+          <a href={`${base}/exp/${nextExp.slug}`} class="next">
+            <span>{ui.next}</span>
+            <strong>{locTitle(nextExp.title)}</strong>
+          </a>
+        </nav>
+      </div>
+
+      {(overviewHtml || figures.length > 0 || tables.length > 0 || hasDetails) && (
+        <aside class="exp-floating-nav reveal" style="--d:70ms">
+          <nav class="exp-nav" aria-label={ui.onThisPage}>
+            {overviewHtml && <a href="#overview">{ui.problem}</a>}
+            {figures.length > 0 && <a class="nav-figures" href="#figures">{ui.figures}</a>}
+            {tables.length > 0 && <a class="nav-tables" href="#tables">{ui.tables}</a>}
+            {hasDetails && <a class="nav-details" href="#details">{ui.reference}</a>}
+          </nav>
+        </aside>
+      )}
+    </div>
+
+    <Footer left={ui.footer} />
+  </section>
+
+  <Lightbox />
+
+  {/* Scroll-spy: highlight the rail nav link for whichever section is in view. */}
+  <script is:inline>
+    (() => {
+      const links = Array.from(document.querySelectorAll('.exp-nav a'));
+      if (!links.length) return;
+      const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+      const sections = Array.from(byId.keys())
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
+      if (!sections.length) return;
+      const io = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((e) => {
+            if (!e.isIntersecting) return;
+            links.forEach((l) => l.classList.remove('is-active'));
+            byId.get(e.target.id)?.classList.add('is-active');
+          });
+        },
+        { rootMargin: '-28% 0px -62% 0px', threshold: 0 },
+      );
+      sections.forEach((s) => io.observe(s));
+    })();
+  </script>
+</Base>

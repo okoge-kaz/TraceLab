@@ -1,7 +1,8 @@
 ---
 import { loadSummary } from '../../lib/summary';
-import { intComma, magnitude, pct, pct1, fmtRange, fmtSeconds } from '../../lib/format';
-import { overviewFigureSections, type StatKey } from '../../lib/figures';
+import { intComma, magnitude, pct, pct1, fmtRange } from '../../lib/format';
+import { gallerySectionKey, overviewFigureSections, type StatKey } from '../../lib/figures';
+import { headlinesFor } from '../../lib/headlines';
 import KpiGrid from '../KpiGrid.astro';
 import Kpi from '../Kpi.astro';
 import Band from '../Band.astro';
@@ -32,14 +33,8 @@ const rbp = m.rounds_by_provider;
 const claude = rbp.claude ?? 0;
 const codex = rbp.codex ?? 0;
 
-const gt = m.generation_timing;
 const g = inp.total_input_growth_when_started_with_tool_result;
 const statMap: Record<StatKey, { label: string; value: string }[]> = {
-  human_wait: [
-    { label: o.statLabels.medianWait, value: fmtSeconds(gt.median_waiting_for_human_input_seconds) },
-    { label: o.statLabels.p90Wait, value: fmtSeconds(gt.p90_waiting_for_human_input_seconds) },
-    { label: o.statLabels.averageWait, value: fmtSeconds(gt.average_waiting_for_human_input_seconds) },
-  ],
   input_growth: [
     { label: o.statLabels.grew, value: pct1(g.positive_growth_share) },
     { label: o.statLabels.shrank, value: pct1(g.negative_growth_share) },
@@ -111,7 +106,7 @@ const localizedCard = (title: string, blurb: string) => fcopy.cards[title] ?? { 
   </Band>
 
   <div class="sec-head reveal" style="--d:420ms">
-    <h2>{o.analysisFigures}</h2>
+    <h2>{o.galleryTitle}</h2>
   </div>
 
   <div class="gallery-sections" aria-label={o.galleryLabel}>
@@ -127,16 +122,17 @@ const localizedCard = (title: string, blurb: string) => fcopy.cards[title] ?? { 
         <div class="gallery">
           {section.figures.map((fig) => {
             const card = localizedCard(fig.title, fig.blurb);
+            const displayCategoryKey = gallerySectionKey(fig.category);
             return (
             <GalleryCard
-              category={fig.category}
-              displayCategory={fcopy.categories[fig.category as keyof typeof fcopy.categories] ?? fig.category}
+              category={displayCategoryKey}
+              displayCategory={fcopy.categories[displayCategoryKey as keyof typeof fcopy.categories] ?? displayCategoryKey}
               title={card.title}
               blurb={card.blurb}
               variant={fig.variant}
               src={fig.src}
               slug={fig.slug}
-              statLines={fig.stat ? statMap[fig.stat] : []}
+              statLines={fig.stat ? statMap[fig.stat] : headlinesFor(fig.slug)}
               readMore={fcopy.readMore}
               delay={nextGalleryDelay()}
             />

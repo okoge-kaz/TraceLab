@@ -12,6 +12,7 @@ import {
   existsSync,
   copyFileSync,
   readdirSync,
+  readFileSync,
   writeFileSync,
 } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
@@ -60,19 +61,18 @@ const FIGURES = [
   { exp: 'llm_generation/output_append_assignment', file: 'ranked_output_vs_next_append_min2000.png', dest: 'llm_generation/ranked_output_vs_next_append_min2000.png' },
   { exp: 'llm_generation/output_append_assignment', file: 'output_vs_prefix_gain_scatter_min2000.png', dest: 'llm_generation/output_vs_prefix_gain_scatter_min2000.png' },
   { exp: 'llm_generation/output_append_assignment', file: 'ranked_output_vs_prefix_gain_min2000.png', dest: 'llm_generation/ranked_output_vs_prefix_gain_min2000.png' },
-  { exp: 'llm_generation/output_append_assignment', file: 'output_vs_next_append_scatter_min4000.png', dest: 'llm_generation/output_vs_next_append_scatter_min4000.png' },
-  { exp: 'llm_generation/output_append_assignment', file: 'ranked_output_vs_next_append_min4000.png', dest: 'llm_generation/ranked_output_vs_next_append_min4000.png' },
-  { exp: 'llm_generation/output_append_assignment', file: 'output_vs_prefix_gain_scatter_min4000.png', dest: 'llm_generation/output_vs_prefix_gain_scatter_min4000.png' },
-  { exp: 'llm_generation/output_append_assignment', file: 'ranked_output_vs_prefix_gain_min4000.png', dest: 'llm_generation/ranked_output_vs_prefix_gain_min4000.png' },
   { exp: 'llm_generation/token_spindles', file: 'token_spindles_transparent.png', dest: 'llm_generation/token_spindles_transparent.png' },
+  { exp: 'llm_generation/output_attribution_schematic', file: 'output_attribution_schematic.png', dest: 'llm_generation/output_attribution_schematic.png' },
+  { exp: 'llm_generation/context_decode_speed_scatter', file: 'context_decode_speed_scatter.png', dest: 'llm_generation/context_decode_speed_scatter.png' },
   { exp: 'llm_generation/output_tokens', file: 'output_tokens_distribution.png', dest: 'llm_generation/output_tokens_distribution.png' },
   { exp: 'llm_generation/generation_time_cdf', file: 'llm_generation_time_count_cdf_by_provider.png', dest: 'llm_generation/llm_generation_time_count_cdf_by_provider.png' },
   { exp: 'llm_generation/generation_time_cdf', file: 'llm_generation_time_total_cdf_by_provider.png', dest: 'llm_generation/llm_generation_time_total_cdf_by_provider.png' },
   { exp: 'prefix_cache/cache_hit_ratio', file: 'cache_hit_ratio_histogram.png', dest: 'prefix_cache/cache_hit_ratio_histogram.png' },
   { exp: 'prefix_cache/cache_hit_ratio', file: 'cache_hit_ratio_append_weighted_histogram.png', dest: 'prefix_cache/cache_hit_ratio_append_weighted_histogram.png' },
-  { exp: 'prefix_cache/kv_cache_active_ratio', file: 'kv_cache_active_ratio_by_provider.png', dest: 'prefix_cache/kv_cache_active_ratio_by_provider.png' },
   { exp: 'prefix_cache/cache_hit_idle_relationship', file: 'user_wait_time_vs_hit_rate_scatter.png', dest: 'prefix_cache/user_wait_time_vs_hit_rate_scatter.png' },
   { exp: 'prefix_cache/cache_hit_idle_relationship', file: 'tool_result_wait_time_vs_hit_rate_scatter.png', dest: 'prefix_cache/tool_result_wait_time_vs_hit_rate_scatter.png' },
+  { exp: 'prefix_cache/eviction_tradeoff', file: 'eviction_tradeoff_by_timeout.png', dest: 'prefix_cache/eviction_tradeoff_by_timeout.png' },
+  { exp: 'prefix_cache/eviction_tradeoff', file: 'eviction_tradeoff_pareto.png', dest: 'prefix_cache/eviction_tradeoff_pareto.png' },
   { exp: 'human_in_the_loop/human_input_wait', file: 'human_input_wait_cdf.png', dest: 'human_in_the_loop/human_input_wait_cdf.png' },
   { exp: 'human_in_the_loop/human_input_wait', file: 'human_input_wait_count_cdf_by_provider.png', dest: 'human_in_the_loop/human_input_wait_count_cdf_by_provider.png' },
   { exp: 'human_in_the_loop/human_input_wait', file: 'human_input_wait_total_cdf_by_provider.png', dest: 'human_in_the_loop/human_input_wait_total_cdf_by_provider.png' },
@@ -105,6 +105,40 @@ function copySummary() {
   copyTracked(src, join(PUBLIC, 'data', 'summary.json'));
   const which = src === rendered ? 'rendered (overview_summary)' : 'repo-root fallback';
   console.log(`[build-payload] summary.json <- ${which}`);
+}
+
+// Card headline numbers: each table experiment's analyze.py emits a small headline.json
+// (a list of {label, value}); aggregate them into one public/data/headlines.json keyed by
+// experiment slug. The Overview gallery's stat cards read these (lib/headlines.ts). Missing
+// files are skipped (re-run the toolkit render to produce them), so the build never hard-fails.
+const HEADLINE_SLUGS = [
+  'session/session_internal_counts',
+  'session/session_compaction_counts',
+  'session/session_cost_distribution',
+  'session/session_timing_distribution',
+  'prefix_cache/redundant_prefill',
+  'llm_generation/token_length_distribution',
+  'llm_generation/append_by_prefix_bin',
+  'tool_calls/codex_wall_internal_gap',
+];
+
+function copyHeadlines() {
+  const headlines = {};
+  let found = 0;
+  for (const slug of HEADLINE_SLUGS) {
+    const src = join(ARTIFACTS, slug, 'headline.json');
+    if (!existsSync(src)) continue;
+    try {
+      headlines[slug] = JSON.parse(readFileSync(src, 'utf-8'));
+      found += 1;
+    } catch (err) {
+      console.log(`[build-payload] headline.json parse failed for ${slug}: ${err.message}`);
+    }
+  }
+  const dest = join(PUBLIC, 'data', 'headlines.json');
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, JSON.stringify(headlines, null, 2));
+  console.log(`[build-payload] headlines: ${found}/${HEADLINE_SLUGS.length} -> ${dest}`);
 }
 
 function copyFigures() {
@@ -143,7 +177,6 @@ const PY_SCRIPTS = [
   'llm_generation/output_tokens/plot.py',
   'llm_generation/generation_time_cdf/plot.py',
   'prefix_cache/cache_hit_ratio/analyze.py',
-  'prefix_cache/kv_cache_active_ratio/plot.py',
   'human_in_the_loop/human_input_wait/plot.py',
   'session/session_token_steps/plot.py',
   'trace_facts/overview_summary/analyze.py',
@@ -212,5 +245,6 @@ function assemblePython() {
 }
 
 copySummary();
+copyHeadlines();
 copyFigures();
 assemblePython();

@@ -82,7 +82,7 @@ export const uiCopy = {
       collectionWindowDesc: 'First and latest observed rows in the public pool.',
       dateRange: 'Date range',
       collectionVolumeLabel: 'Collection volume over time',
-      analysisFigures: 'Analysis figures',
+      galleryTitle: 'Gallery',
       galleryLabel: 'Figure gallery sections',
       galleryType: 'Type',
       statLabels: {
@@ -107,26 +107,27 @@ export const uiCopy = {
       sections: {
         tool_calls: {
           title: 'Tool calls',
-          description: 'How agents choose tools, how often they call them, and how long those calls take.',
+          description: 'How agents choose tools, how often they call them, how long those calls take, and their overhead.',
         },
         llm_generation: {
           title: 'LLM generation',
-          description: 'Token composition, output length, and end-to-end generation timing.',
+          description: 'Token composition, output length, output attribution, and end-to-end generation timing.',
         },
         prefix_cache: {
           title: 'Prefix cache',
-          description: 'Cache reuse and the share of context kept active across agent steps.',
+          description: 'Cache reuse, idle-gap eviction, redundant prefill, and the share of context kept active.',
         },
         human_in_the_loop: {
           title: 'Human in the loop',
           description: 'Where human waiting time appears in the workload timeline.',
         },
         session: {
-          title: 'Session context',
-          description: 'How context evolves across a full agent session.',
+          title: 'Session',
+          description: 'Session-level context, cost, timing, compaction, and human waits across a full agent session.',
         },
       },
       cards: {} as Record<string, { title: string; blurb: string }>,
+      captions: {} as Record<string, string>,
     },
     compare: {
       aria: 'Provider comparison',
@@ -679,7 +680,7 @@ export const uiCopy = {
       collectionWindowDesc: '公开数据池中最早和最新观测到的记录。',
       dateRange: '日期范围',
       collectionVolumeLabel: '随时间变化的采集量',
-      analysisFigures: '分析图表',
+      galleryTitle: '图库',
       galleryLabel: '图表分组',
       galleryType: '类型',
       statLabels: {
@@ -704,23 +705,23 @@ export const uiCopy = {
       sections: {
         tool_calls: {
           title: '工具调用',
-          description: '智能体如何选择工具、调用频率如何，以及这些调用耗时多久。',
+          description: '智能体如何选择工具、调用频率、调用耗时，以及调用开销。',
         },
         llm_generation: {
           title: 'LLM 生成',
-          description: 'token 组成、输出长度和端到端生成耗时。',
+          description: 'token 组成、输出长度、输出归因和端到端生成耗时。',
         },
         prefix_cache: {
           title: '前缀缓存',
-          description: '缓存复用情况，以及智能体步骤中保持活跃的上下文占比。',
+          description: '缓存复用、空闲间隔驱逐、冗余预填充，以及保持活跃的上下文占比。',
         },
         human_in_the_loop: {
           title: '人机协作',
           description: '人类等待时间出现在工作负载时间线中的位置。',
         },
         session: {
-          title: '会话上下文',
-          description: '上下文如何在完整智能体会话中演化。',
+          title: '会话',
+          description: '会话级上下文、成本、耗时、压缩和人类等待，贯穿整个智能体会话。',
         },
       },
       cards: {
@@ -816,7 +817,151 @@ export const uiCopy = {
           title: '总输入增长',
           blurb: '工具触发的智能体步骤之后的净上下文增长。',
         },
+        'Session internal counts': {
+          title: '会话内部计数',
+          blurb: '每个会话、请求和步骤的请求数、步骤数和工具调用数。',
+        },
+        'Context compactions': {
+          title: '上下文压缩',
+          blurb: '会话在接近上限时压缩并丢弃上下文的频率。',
+        },
+        'Cost distribution': {
+          title: '成本分布',
+          blurb: '每个会话、请求和步骤的花费，以及成本去向。',
+        },
+        'Timing distribution': {
+          title: '耗时分布',
+          blurb: '人类思考、LLM 生成与工具执行在墙钟时间中的占比。',
+        },
+        'Token length distribution': {
+          title: 'Token 长度分布',
+          blurb: '按提供商划分的每步前缀、追加和输出 token 长度。',
+        },
+        'Append by prefix bin': {
+          title: '按前缀分箱的追加',
+          blurb: '随着缓存前缀填满，追加长度如何收缩。',
+        },
+        'Output attribution': {
+          title: '输出归因',
+          blurb: '先前步骤的输出在下一步中被计入的两种方式。',
+        },
+        'Context vs decode speed': {
+          title: '上下文与解码速度',
+          blurb: '观测到的 LLM 耗时与总输入上下文长度的关系。',
+        },
+        'Codex tool overhead': {
+          title: 'Codex 工具开销',
+          blurb: 'Codex 工具端到端时间与内部执行时间的对比。',
+        },
+        'Tool category distribution': {
+          title: '工具类别分布',
+          blurb: '工具调用和延迟如何在粗粒度类别间分布。',
+        },
+        'Tool latency CDF by provider': {
+          title: '按提供商的工具延迟 CDF',
+          blurb: '按提供商划分的每次工具调用延迟。',
+        },
+        'Tool total-latency CDF': {
+          title: '工具总延迟 CDF',
+          blurb: '按阈值划分的工具延迟总和，按提供商区分。',
+        },
+        'Redundant prefill': {
+          title: '冗余预填充',
+          blurb: '预填充上下文中真正新鲜与被回放的占比。',
+        },
+        'Eviction trade-off': {
+          title: '驱逐权衡',
+          blurb: '随驱逐超时增长，缓存命中率与存储之间的权衡。',
+        },
+        'Cache hit ratio (append-weighted)': {
+          title: '缓存命中率（追加加权）',
+          blurb: '按追加 token 加权的前缀缓存命中率。',
+        },
+        // 实验详情页标题（experiments.ts 中文案与 gallery 卡片不同的条目）
+        'Adjusted prefix vs append': {
+          title: '调整后前缀 vs 追加',
+          blurb: '扣除上一步助手输出回放后得到的新鲜追加。',
+        },
+        'Append-heavy latency match': {
+          title: '追加密集步骤的延迟匹配',
+          blurb: '追加密集的智能体步骤是否比同等前缀密集的步骤更慢。',
+        },
+        'Prefix cache hit ratio': {
+          title: '前缀缓存命中率',
+          blurb: '有多少输入来自前缀缓存。',
+        },
+        'Cache hit versus idle gap': {
+          title: '缓存命中与空闲间隔',
+          blurb: '低前缀缓存命中的智能体步骤是否跟在较长的人类或工具等待之后。',
+        },
       },
+      captions: {
+        'Per-session, per-request, and per-step counts (avg / p25 / p50 / p90 / p99).':
+          '按会话、按请求、按步骤的计数（avg / p25 / p50 / p90 / p99）。',
+        'Same-session context change by step trigger: per-step change in total input length (prefix + append tokens) versus the previous step in the session, split into growth and reduction bands.':
+          '按步骤触发来源划分的同会话上下文变化：每一步相对会话中上一步的总输入长度（前缀 + 追加 token）变化，分为增长和缩减区间。',
+        'Compactions per session and their user- vs tool-initiated trigger split, by provider.':
+          '每个会话的压缩次数及其用户触发与工具触发的占比，按提供商划分。',
+        'Per-session, per-request, and per-step cost (USD) by category; % cost is each category’s share of total spend.':
+          '按类别划分的每会话、每请求、每步骤成本（USD）；% cost 为各类别占总支出的份额。',
+        'Per-session, per-request, and per-step time by category; % time is each category’s share.':
+          '按类别划分的每会话、每请求、每步骤耗时；% time 为各类别的份额。',
+        'Token totals across a session.': '一个会话内的 token 总量。',
+        'Human input wait CDF.': '人类输入等待 CDF。',
+        'Human wait count CDF by provider.': '按提供商划分的人类等待次数 CDF。',
+        'Human wait total-time CDF by provider.': '按提供商划分的人类等待总时长 CDF。',
+        'Per-step prefix, append, and output token lengths (avg / p25 / p50 / p90 / p99), by provider.':
+          '按提供商划分的每步前缀、追加和输出 token 长度（avg / p25 / p50 / p90 / p99）。',
+        'Prefix vs appended input token histograms.': '前缀与追加输入 token 直方图。',
+        'Prefix and append token CDFs.': '前缀和追加 token 的 CDF。',
+        'Prefix versus append scatter sample.': '前缀与追加散点抽样。',
+        'Append-token count share versus token-mass share.': '追加 token 的数量占比与 token 质量占比对比。',
+        'Append-token stats (steps / avg / p50 / p90 / p99) by prefix-length bin, per provider.':
+          '按前缀长度分箱、按提供商划分的追加 token 统计（步骤数 / avg / p50 / p90 / p99）。',
+        'Output token length distribution.': '输出 token 长度分布。',
+        'Two ways a prior step’s output is accounted in the next step: cached as prefix, or re-sent as append (schematic).':
+          '上一步输出在下一步中被计入的两种方式：缓存为前缀，或作为追加重新发送（示意图）。',
+        'Previous output versus next append, min 2000 output tokens.':
+          '先前输出与下一步追加对比，输出 token 不少于 2000。',
+        'Ranked previous output and next append, min 2000 output tokens.':
+          '排序后的先前输出与下一步追加，输出 token 不少于 2000。',
+        'Previous output versus next prefix gain, min 2000 output tokens.':
+          '先前输出与下一步前缀增量对比，输出 token 不少于 2000。',
+        'Ranked previous output and prefix gain, min 2000 output tokens.':
+          '排序后的先前输出与前缀增量，输出 token 不少于 2000。',
+        'Trace-observed LLM timing versus total input context length.':
+          '数据中观测到的 LLM 耗时与总输入上下文长度的关系。',
+        'Prefix versus adjusted append scatter sample.': '前缀与调整后追加的散点抽样。',
+        'Prefix, adjusted append, and output token spindles.': '前缀、调整后追加和输出 token 的分布轴。',
+        'Generation-time count CDF by provider.': '按提供商划分的生成耗时次数 CDF。',
+        'Generation-time total CDF by provider.': '按提供商划分的生成耗时总时长 CDF。',
+        'Matched-bucket append-heavy latency effects.': '匹配分桶下追加密集型的延迟效应。',
+        'Normalized latency overlap for append-heavy and prefix-heavy rows.':
+          '追加密集与前缀密集行的归一化延迟重叠。',
+        'Tool call counts by tool and provider.': '按工具和提供商划分的工具调用次数。',
+        'Per-tool latency distribution.': '按工具划分的延迟分布。',
+        'Tool-call count share versus summed-latency share.': '工具调用数量占比与延迟总和占比对比。',
+        'Latency CDF by provider.': '按提供商划分的延迟 CDF。',
+        'Summed tool-latency CDF by provider.': '按提供商划分的工具延迟总和 CDF。',
+        'Codex tool end-to-end vs internal latency and the residual gap, by tool.':
+          '按工具划分的 Codex 工具端到端延迟与内部延迟，及其残余差值。',
+        'Tool-call count share by coarse category.': '按粗粒度类别划分的工具调用数量占比。',
+        'Summed effective latency by tool category.': '按工具类别划分的有效延迟总和。',
+        'Tool category dashboard with call share and latency quantiles.':
+          '工具类别仪表盘，含调用占比和延迟分位数。',
+        'Call share versus latency share across latency bins.': '各延迟分箱中的调用占比与延迟占比对比。',
+        'Total effective tool time by kind and provider.': '按类型和提供商划分的有效工具总耗时。',
+        'Per-step cache hit ratio.': '每步缓存命中率。',
+        'Append-weighted cache hit ratio.': '追加加权的缓存命中率。',
+        'Token-weighted prefix-cache hit rate by provider.': '按提供商划分的 token 加权前缀缓存命中率。',
+        'Human idle wait versus prefix-cache hit rate.': '人类空闲等待与前缀缓存命中率的关系。',
+        'Tool-triggered wait time versus prefix-cache hit rate.': '工具触发等待时长与前缀缓存命中率的关系。',
+        'Fresh-token share of append and prefill amplification, overall and by trigger, per provider.':
+          '追加中的新鲜 token 占比与预填充放大，按总体和触发来源、按提供商划分。',
+        'Prefix-cache hit rate and storage versus the eviction timeout.':
+          '前缀缓存命中率与存储随驱逐超时的变化。',
+        'Hit-rate versus storage Pareto frontier.': '命中率与存储的帕累托前沿。',
+      } as Record<string, string>,
     },
     compare: {
       aria: '提供商对比',
@@ -914,8 +1059,8 @@ export const uiCopy = {
         'All classified append tokens': '所有已分类追加 token',
         'All classified context increase': '所有已分类上下文增长',
         'All classified context / append': '所有已分类上下文 / 追加',
-        'Session context': '会话上下文',
-        'context growth across sessions and agent steps': '跨会话和智能体步骤的上下文增长',
+        Session: '会话',
+        'context growth, human waits, and agent-step workflow shape': '上下文增长、人类等待和智能体步骤工作流形态',
         'Step-level context growth': '步骤级上下文增长',
         'Total context increase': '上下文总增长',
         'User-initiated context increase avg / p50 / p90': '用户触发上下文增长 avg / p50 / p90',
@@ -927,8 +1072,7 @@ export const uiCopy = {
         'Tool-triggered growth share': '工具触发增长占比',
         'Tool-triggered reduction share': '工具触发缩减占比',
         'Tool-triggered major compaction share': '工具触发大幅压缩占比',
-        'Human in the loop': '人机协作',
-        'human waits before the next model response': '下一次模型响应前的人类等待',
+        'Human waits': '人类等待',
         'Total human wait time': '人类等待总时长',
         'Human wait avg / p50 / p90': '人类等待 avg / p50 / p90',
       },

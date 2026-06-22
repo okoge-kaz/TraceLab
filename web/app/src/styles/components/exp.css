@@ -268,6 +268,28 @@
   .fig-analysis.readme > :first-child { margin-top: 0; }
   .fig-analysis.readme h3, .fig-analysis.readme h4 { margin-top: 16px; }
 
+  /* Tables section — the full Avg/P50/P90/P99 grids emitted as Markdown. The body reuses .readme
+     only for its table cell styling (.readme th/td); the rounded prose-card chrome (border-radius,
+     padding, border, shadow) is stripped so the grid renders flush — no rounded corners on tables. */
+  .exp-tables { display: flex; flex-direction: column; gap: 34px; }
+  .exp-table { margin: 0; display: flex; flex-direction: column; }
+  /* .exp-table-body.readme — the double class wins over the later .readme prose-card rules
+     (equal specificity, source order would otherwise re-apply the rounded chrome). */
+  .exp-table-body.readme {
+    background: none; border: none; border-radius: 0; box-shadow: none;
+    padding: 0; max-width: none; overflow-x: auto;
+  }
+  .exp-table-body > :first-child { margin-top: 0; }
+  .exp-table-body > :last-child { margin-bottom: 0; }
+  /* table-layout: fixed + a fixed first column so the Per-session/request/step tables share one
+     column grid and line up vertically (auto layout would size each table to its own content). */
+  .exp-table-body table { margin: 0; table-layout: fixed; }
+  .exp-table-body th, .exp-table-body td { overflow-wrap: anywhere; }
+  .exp-table-body th:first-child, .exp-table-body td:first-child { width: 34%; }
+  .exp-tables figcaption {
+    color: var(--ink); font-size: var(--fs-base); line-height: 1.55; margin: 16px 2px 0;
+  }
+
   .exp-step-nav {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
     margin-top: 58px; padding-top: 24px; border-top: 1px solid var(--line);
@@ -342,6 +364,7 @@
 
   /* Personal mode (?personal=1): only the overview shows, so drop the figures/details nav links. */
   .personal-exp .exp-nav .nav-figures,
+  .personal-exp .exp-nav .nav-tables,
   .personal-exp .exp-nav .nav-details { display: none; }
 
   /* Medium and narrow screens: collapse the rail above the content, and keep the floating nav as a
