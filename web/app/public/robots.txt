@@ -1,0 +1,11 @@
+# SyFI TraceLab — https://tracelab.cs.washington.edu/
+User-agent: *
+Allow: /
+
+# Pyodide runtime + dataset payloads are fetched by the app at runtime, not pages to index.
+# Excluding them spares crawl budget; pre-rendered figures under /figures/ stay crawlable.
+Disallow: /py/
+Disallow: /data/
+Disallow: /api/
+
+Sitemap: https://tracelab.cs.washington.edu/sitemap-index.xml

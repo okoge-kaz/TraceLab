@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
 
 // Repo root — the web app imports the single-source price table from artifacts/utils/pricing.json,
 // which lives outside the Vite project root, so the dev server must be allowed to read it.
@@ -25,12 +26,29 @@ const hmrClientPort = Number(process.env.VITE_HMR_CLIENT_PORT || process.env.HMR
 
 export default defineConfig({
   output: 'static',
+  // Canonical deployment origin. Required for @astrojs/sitemap to emit absolute URLs, and it's the
+  // same origin already hard-coded in the Base layout's canonical/OG/hreflang tags.
+  site: 'https://tracelab.cs.washington.edu',
   // Warm linked pages on hover so gallery → /exp/<slug> navigation has nothing left to fetch
   // on click (the HTML/CSS land while the cursor is still on the card).
   prefetch: {
     prefetchAll: true,
     defaultStrategy: 'hover',
   },
+  // Emit dist/sitemap-index.xml (+ sitemap-0.xml) covering all static pages. The i18n block makes
+  // each EN page and its /zh/ counterpart cross-reference via <xhtml:link hreflang>, matching the
+  // en / zh-CN / x-default alternates already in <head>. robots.txt points crawlers at the index.
+  integrations: [
+    sitemap({
+      i18n: {
+        defaultLocale: 'en',
+        locales: {
+          en: 'en',
+          zh: 'zh-CN',
+        },
+      },
+    }),
+  ],
   build: {
     assets: '_assets',
     inlineStylesheets: 'always',
