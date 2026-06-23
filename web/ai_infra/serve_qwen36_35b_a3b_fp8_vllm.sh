@@ -41,8 +41,16 @@ TOOL_CALL_PARSER="${TOOL_CALL_PARSER:-qwen3_xml}"
 TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-1}"
 VLLM_API_KEY="${VLLM_API_KEY:-${SYFI_VLLM_API_KEY:-}}"
 ENABLE_PROMPT_TOKENS_DETAILS="${ENABLE_PROMPT_TOKENS_DETAILS:-0}"
-ENABLE_PREFIX_CACHING="${ENABLE_PREFIX_CACHING:-}"
+ENABLE_PREFIX_CACHING="${ENABLE_PREFIX_CACHING:-1}"
 DETACH="${DETACH:-0}"
+# Legacy hosts register a dedicated "nvidia" docker runtime; modern nvidia-container-toolkit
+# exposes GPUs through --gpus alone. Leave empty to rely on --gpus; set VLLM_RUNTIME=nvidia for the
+# legacy form.
+VLLM_RUNTIME="${VLLM_RUNTIME:-}"
+# Restart policy for long-running deployments (e.g. unless-stopped|always). When set, the container
+# is NOT --rm so it survives daemon restarts/reboots (with docker enabled at boot). Leave empty for a
+# one-shot --rm run.
+VLLM_RESTART="${VLLM_RESTART:-}"
 
 HF_CACHE_HOST="${HF_HOME:-$HOME/.cache/huggingface}"
 VLLM_CACHE_HOST="${VLLM_CACHE_HOST:-${HF_CACHE_HOST}/vllm-cache}"
@@ -50,9 +58,8 @@ mkdir -p "${HF_CACHE_HOST}"
 mkdir -p "${VLLM_CACHE_HOST}"
 
 args=(
-  docker run --rm
+  docker run
   --name "${CONTAINER_NAME}"
-  --runtime nvidia
   --gpus "${VLLM_GPUS}"
   -p "${HOST}:${PORT}:8000"
   --ipc=host
@@ -60,6 +67,16 @@ args=(
   -v "${VLLM_CACHE_HOST}:/root/.cache/vllm"
   -e "HF_HOME=/root/.cache/huggingface"
 )
+
+if [[ -n "${VLLM_RUNTIME}" ]]; then
+  args+=(--runtime "${VLLM_RUNTIME}")
+fi
+
+if [[ -n "${VLLM_RESTART}" ]]; then
+  args+=(--restart "${VLLM_RESTART}")
+else
+  args+=(--rm)
+fi
 
 if [[ "${DETACH}" == "1" || "${DETACH}" == "true" ]]; then
   args+=(-d)
