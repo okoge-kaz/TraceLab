@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="web/app/public/syfi-mark.svg" alt="SyFI" width="150">
-
-<h1>SyFI TraceLab</h1>
+<h1>TraceLab</h1>
 
 **A real-world Claude / Codex trace & open toolkit for coding-agent workload analysis.**
 
