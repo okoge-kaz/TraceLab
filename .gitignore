@@ -55,8 +55,12 @@ web/server/data/
 /test_workload_*.tar.gz
 /trace.tar.gz
 web/app/*-preview.html
+# Paper PDF hosted by the static site: shipped via rsync from dist/, kept out of git (large binary).
+web/app/public/paper.pdf
 # Local scratch workspace (unrelated infra / paper sources), never part of the build
 /temp/
 
 # Local-only deployment routine for UW CSE production host.
 .codex/skills/tracelab-send-to-production/
+# Local-only runbook: self-hosted vLLM on ptc GPU 1 + AI-backend wiring (names internal hosts/keys).
+.codex/skills/serve-vllm-ptc/
