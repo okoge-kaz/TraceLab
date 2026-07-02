@@ -16,7 +16,7 @@ actually produce in the wild — then explore them in your browser.
 
 [![License: Apache 2.0](https://img.shields.io/badge/code-Apache%202.0-4b2e83.svg)](LICENSE)
 [![Dataset: CC BY 4.0](https://img.shields.io/badge/dataset-CC%20BY%204.0-b7a57a.svg)](LICENSE-DATASET.md)
-[![Paper](https://img.shields.io/badge/paper-PDF-b31b1b.svg?logo=adobeacrobatreader&logoColor=white)](https://tracelab.cs.washington.edu/paper.pdf)
+[![Paper](https://img.shields.io/badge/paper-arXiv-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2606.30560)
 [![Blog](https://img.shields.io/badge/blog-link-7c3aed.svg)](#)
 [![Dataset](https://img.shields.io/badge/dataset-357K%20rounds%20·%2043%20devs-2ea043.svg)](#-the-dataset)
 
@@ -412,12 +412,14 @@ trace. By submitting a contribution you agree to license it under the project's
 If you use TraceLab — the dataset, the toolkit, or the figures — please cite:
 
 ```bibtex
-@misc{zhu2026tracelab,
-  title        = {TraceLab: Characterizing Coding Agent Workloads for LLM Serving},
-  author       = {Kan Zhu and Mathew Jacob and Chenxi Ma and Yi Pan and Stephanie Wang and Arvind Krishnamurthy and Baris Kasikci},
-  year         = {2026},
-  howpublished = {\url{https://tracelab.cs.washington.edu}},
-  note         = {SyFI Lab, University of Washington}
+@misc{zhu2026tracelabcharacterizingcodingagent,
+      title={TraceLab: Characterizing Coding Agent Workloads for LLM Serving}, 
+      author={Kan Zhu and Mathew Jacob and Chenxi Ma and Yi Pan and Stephanie Wang and Arvind Krishnamurthy and Baris Kasikci},
+      year={2026},
+      eprint={2606.30560},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2606.30560}, 
 }
 ```
 
