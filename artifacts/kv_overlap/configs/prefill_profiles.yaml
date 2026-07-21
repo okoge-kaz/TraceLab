@@ -1,0 +1,46 @@
+# Synthetic append-prefill performance profiles (Phase 2 of the strip-thinking
+# analysis). TraceLab alone cannot tell us Qwen/GLM/Kimi-on-B300 append-prefill
+# time, so these are SYNTHETIC ROOFLINE PROFILES, clearly separated from the
+# trace-only Phase 1 results. Replace with a measured lookup table
+# (--prefill-table) when B300 microbenchmarks are available.
+#
+# Model:
+#   prefill_ms(P, S) = launch_overhead_ms
+#                      + S * (2 * active_params) / F_eff * 1e3          (linear/MoE FLOPs)
+#                      + (P*S + S^2/2) * attn_flops_per_ctx_token / F_eff * 1e3
+#   F_eff = tp_size * per_gpu_flops * mfu / concurrency_penalty(c)
+#
+# This is a 2D (prefix, suffix)-dependent model by construction — a single
+# constant tokens/s is deliberately NOT used for main results.
+#
+# per_gpu_flops: B300-class (Blackwell Ultra) dense FP8 ~= 4.5e15 FLOPS
+# (approximate public figure; the mfu spread below is meant to absorb the
+# uncertainty in both peak FLOPS and achievable utilization).
+
+benchmark_grid:
+  prefix_tokens: [4096, 16384, 32768, 65536, 131072, 262144, 524288, 1048576]
+  suffix_tokens: [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  concurrency: [1, 2, 4, 8, 16]
+
+profiles:
+  b300_tp8_optimistic:
+    tp_size: 8
+    per_gpu_flops: 4.5e15
+    mfu: 0.60
+    launch_overhead_ms: 3.0
+    concurrency_penalty: {1: 1.0, 2: 1.05, 4: 1.15, 8: 1.35, 16: 1.75}
+  b300_tp8_base:
+    tp_size: 8
+    per_gpu_flops: 4.5e15
+    mfu: 0.40
+    launch_overhead_ms: 6.0
+    concurrency_penalty: {1: 1.0, 2: 1.10, 4: 1.25, 8: 1.55, 16: 2.20}
+  b300_tp8_pessimistic:
+    tp_size: 8
+    per_gpu_flops: 4.5e15
+    mfu: 0.20
+    launch_overhead_ms: 12.0
+    concurrency_penalty: {1: 1.0, 2: 1.20, 4: 1.45, 8: 1.95, 16: 3.00}
+
+main_profile: b300_tp8_base
+main_concurrency: 1

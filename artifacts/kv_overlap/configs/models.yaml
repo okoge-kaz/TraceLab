@@ -1,0 +1,118 @@
+# Model KV-cache configurations for the KV-overlap replay analysis.
+#
+# All byte counts are derived from *official public* model configs (HuggingFace
+# config.json), fetched 2026-07-21. The replay is a COUNTERFACTUAL SIMULATION:
+# TraceLab workload timing (Claude/Codex sessions) is replayed against these
+# open-model KV sizes; nothing here claims to describe the Claude/Codex backends.
+#
+# logical_kv_bytes_per_token:
+#   GQA:  2 (K&V) * num_layers * num_kv_heads * head_dim * bytes_per_element
+#   MLA:  num_layers * (kv_lora_rank + qk_rope_head_dim) * bytes_per_element
+#         (compressed latent + decoupled RoPE key; the per-head K/V are
+#          recomputed from the latent and are NOT stored/transferred)
+#
+# physical_transfer_multiplier: sharding/replication factor of the physical
+# transfer relative to logical bytes (e.g. TP ranks that replicate KV).
+# Main results use 1.0; sensitivity sweeps use tp_replication_sweep.
+#
+# attn_flops_per_ctx_token = num_layers * 2 * num_q_heads * (d_qk + d_v)
+#   (QK^T + AV forward FLOPs per generated token per context token; used only
+#    by the synthetic prefill profiles, see prefill_profiles.yaml)
+
+models:
+  qwen3-235b-a22b:
+    source: https://huggingface.co/Qwen/Qwen3-235B-A22B/raw/main/config.json
+    architecture: Qwen3MoeForCausalLM (MoE 235B total / 22B active)
+    num_attention_layers: 94
+    kv_layout: gqa
+    num_key_value_heads: 4
+    num_attention_heads: 64
+    head_dim: 128
+    kv_dtype: bf16
+    logical_kv_bytes_per_token: 192512        # 2*94*4*128*2 B = 188 KiB
+    kv_bytes_per_token_by_dtype:
+      bf16: 192512
+      fp8: 96256                              # official FP8 checkpoint exists (Qwen3-235B-A22B-FP8)
+    physical_transfer_multiplier: 1.0
+    block_size_tokens: 16                     # vLLM default page size for GQA models (assumption)
+    active_params: 22.0e9
+    attn_flops_per_ctx_token: 3080192         # 94*2*64*(128+128)
+    notes: >
+      Standard GQA KV cache. Native context 40,960 (extendable via YaRN); trace steps
+      beyond the native window are still replayed (KV size per token is unaffected).
+
+  glm-5.2:
+    source: https://huggingface.co/zai-org/GLM-5.2/raw/main/config.json
+    architecture: GlmMoeDsaForCausalLM (MoE 256+1 experts / 8 active; MLA + DSA sparse indexer)
+    num_attention_layers: 78
+    kv_layout: mla
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    qk_nope_head_dim: 192
+    v_head_dim: 256
+    num_attention_heads: 64
+    kv_dtype: bf16
+    logical_kv_bytes_per_token: 89856         # 78*(512+64)*2 B ~= 87.8 KiB (MLA latent + RoPE key)
+    kv_bytes_per_token_by_dtype:
+      bf16: 89856
+      fp8: 44928                              # official FP8 checkpoint exists (GLM-5.2-FP8)
+    # DSA indexer key cache: index_head_dim 128 per indexer layer; indexer_types
+    # alternates full/shared over 76 layers ("IndexShare", shared across every 4
+    # sparse layers). Serving dtype of the indexer cache is UNVERIFIED; the
+    # +indexer variant below adds 76*128 B (fp8 assumption) = 9,728 B/token.
+    indexer_extra_bytes_per_token: 9728
+    physical_transfer_multiplier: 1.0
+    block_size_tokens: 64                     # MLA backends (DeepSeek-style) page size (assumption)
+    active_params: 40.0e9                     # ~8 of 256 routed + shared expert active (approx.)
+    attn_flops_per_ctx_token: 5111808         # 78*2*64*(256+256); UPPER BOUND: DSA sparse layers
+                                              # cap attended context at index_topk=2048, so real
+                                              # long-prefix prefill attention cost is lower.
+    notes: >
+      MLA latent cache; DSA indexer adds a small extra per-token cache (see
+      indexer_extra_bytes_per_token). 1M context (max_position_embeddings 1048576).
+
+  kimi-k3-proxy-k2:
+    source: https://huggingface.co/moonshotai/Kimi-K2-Thinking/raw/main/config.json
+    architecture: >
+      EXPLICIT PROXY. Kimi K3's config.json is not public as of 2026-07-21 (HF repo 401;
+      open weights announced for 2026-07-27). Press coverage describes a 2.8T MoE with a
+      3:1 hybrid of Kimi Delta Attention (linear/RNN state) to gated full MLA and 1M
+      context — which would make its *transferable per-token* KV smaller than pure MLA —
+      but layer counts / latent dims are UNVERIFIED. We therefore use the closest public
+      Moonshot config, Kimi-K2-Thinking (DeepseekV3ForCausalLM, MLA), as the proxy, and
+      separately sweep architecture-independent KV sizes (see kv_size_sweep).
+    num_attention_layers: 61
+    kv_layout: mla
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    qk_nope_head_dim: 128
+    v_head_dim: 128
+    num_attention_heads: 64
+    kv_dtype: bf16
+    logical_kv_bytes_per_token: 70272         # 61*(512+64)*2 B ~= 68.6 KiB
+    kv_bytes_per_token_by_dtype:
+      bf16: 70272
+      fp8: 35136
+    physical_transfer_multiplier: 1.0
+    block_size_tokens: 64
+    active_params: 32.0e9                     # K2: 1T total / 32B active
+    attn_flops_per_ctx_token: 2498560         # 61*2*64*(192+128)
+    notes: >
+      Serving KV dtype for K2 is not stated in the official config (weights are INT4 QAT;
+      config dtype bfloat16) — bf16 KV is the conservative main assumption.
+
+# Architecture-independent sensitivity for Kimi K3 (and any future model):
+# pure per-token KV size sweep, decoupled from any proxy architecture.
+kv_size_sweep:
+  block_size_tokens: 64
+  bytes_per_token:
+    - 65536      # 64 KiB
+    - 98304      # 96 KiB
+    - 131072     # 128 KiB
+    - 196608     # 192 KiB
+    - 262144     # 256 KiB
+
+# TP replication sensitivity: physical_transfer_multiplier values to sweep.
+# 2.0 models e.g. TP8 over 4 KV heads (2x KV replication) or naive per-rank
+# MLA latent replication without dedup.
+tp_replication_sweep: [1.0, 2.0]

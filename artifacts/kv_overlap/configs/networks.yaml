@@ -1,0 +1,27 @@
+# Hypothetical D<->P interconnect configurations for the KV-overlap replay.
+# bandwidth_gbps values are effective GB/s (bytes, not bits).
+#
+# Reference points (approximate, for interpretation only):
+#   25  GB/s ~ 200 GbE per-flow effective
+#   50  GB/s ~ 400 GbE effective
+#   100 GB/s ~ 800 GbE / ConnectX-8 class effective
+#   200 GB/s ~ multi-rail RDMA
+#   900 GB/s ~ NVLink-class intra-domain (NVL72-style D->P inside one NVLink domain)
+
+bandwidth_gbps: [25, 50, 70, 100, 200, 900]
+fixed_overhead_ms: [0.1, 0.5, 1.0, 2.0]
+
+# Main configuration used for step-level parquet outputs and headline numbers
+# (sensitivity CSVs cover the full grid above).
+main:
+  bandwidth_gbps: 100
+  fixed_overhead_ms: 0.5
+
+# Hypothetical P-node queueing sweep (ms). Proactive requests are enqueued at
+# tool-execution start, so queue wait is overlappable with tool slack; reactive
+# baseline queueing starts after tool completion and is always exposed.
+p_queue_ms: [0, 1, 5, 10, 50, 100]
+
+# Prefix-cache-miss sensitivity: restoring C_i to P from a lower-tier cache
+# (host DRAM / pooled memory / SSD) instead of assuming P-resident prefix.
+prefix_restore_bandwidth_gbps: [5, 10, 50]
